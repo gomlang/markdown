@@ -144,4 +144,4 @@ module. The native GoML generator validates the checksum and 2,125-entry count,
 then generates the shared lookup and wrapper deterministically. Its ordinary
 native test verifies both files on each `just ecosystem-test markdown` run.
 
-To regenerate, run `../../../stage2/bin/goml build` from `ecosystem/markdown/tools`, then `_artifact/bin/markdown_entities generate ..`. `check` verifies the file without writing. The data and generator need no Python installation.
+To regenerate, run `../../../goml-dev/stage2/bin/goml build` from `tools`, then `_artifact/bin/markdown_entities generate ..`. `check` verifies the file without writing. The data and generator need no Python installation.
