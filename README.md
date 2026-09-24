@@ -120,10 +120,10 @@ SHA-256 is `806e9aed65037197f1ec85e12be6e8cd870fc5608b4de0fffd990f689f376a73`.
 It preserves the previous Unicode 15 classification and uses binary search without
 runtime table allocation. The data license is in [LICENSE.unicode.txt](LICENSE.unicode.txt).
 
-Run from the repository root:
+Run from this library repository:
 
 ```sh
-just ecosystem-test markdown
+(cd ../verification && just ecosystem-test markdown)
 ```
 
 The command checks formatting, library tests, a separately resolved consumer,
@@ -142,6 +142,6 @@ comes from CPython 3.12.3 `html.entities.html5`, restricted to semicolon-ended n
 Its license remains in [LICENSE.entities.txt](LICENSE.entities.txt) and the HTML
 module. The native GoML generator validates the checksum and 2,125-entry count,
 then generates the shared lookup and wrapper deterministically. Its ordinary
-native test verifies both files on each `just ecosystem-test markdown` run.
+native test verifies both files on each `(cd ../verification && just ecosystem-test markdown)` run.
 
 To regenerate, run `../../../goml-dev/stage2/bin/goml build` from `tools`, then `_artifact/bin/markdown_entities generate ..`. `check` verifies the file without writing. The data and generator need no Python installation.
