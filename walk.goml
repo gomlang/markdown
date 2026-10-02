@@ -3,62 +3,77 @@ package markdown;
 use std::text;
 
 enum Visit {
-    Block(Block),
-    Inline(Inline),
-}
-
-fn push_inlines(stack: Vec[(Visit, isize)], values: Vec[Inline], depth: isize) -> () {
-    let mut index = values.len();
-    while index > 0 {
-        index -= 1;
-        stack.push((Visit::Inline(values[index]), depth));
-    }
-}
-
-fn push_blocks(stack: Vec[(Visit, isize)], values: Vec[Block], depth: isize) -> () {
-    let mut index = values.len();
-    while index > 0 {
-        index -= 1;
-        stack.push((Visit::Block(values[index]), depth));
-    }
+    Blocks(Vec[Block], isize),
+    Inlines(Vec[Inline], isize),
+    Items(Vec[Vec[Block]], isize),
 }
 
 fn walk_stack(stack: Vec[(Visit, isize)], visit_block: (Block) -> (), visit_inline: (Inline) -> ()) -> Result[
     (),
     Error,
 ] {
-    let mut count: isize = 0;
+    let mut count = 0;
+    let mut items_seen = 0;
     while let Some((visit, depth)) = stack.pop() {
-        count += 1;
-        if count > 250000 || depth > 256 {
-            return Result::Err(Error { line: 0, message: "AST walk limit exceeded" })
-        }
         match visit {
-            Visit::Block(block) => {
+            Visit::Blocks(values, index) => {
+                if index == values.len() {
+                    continue
+                }
+                count += 1;
+                if count > 250000 || depth > 256 {
+                    return Result::Err(Error { line: 0, message: "AST walk limit exceeded" })
+                }
+                if index + 1 < values.len() {
+                    stack.push((Visit::Blocks(values, index + 1), depth));
+                }
+                let block = values[index];
                 visit_block(block);
                 match block.kind {
-                    BlockKind::Paragraph(values) => push_inlines(stack, values, depth + 1),
-                    BlockKind::Heading(_, values) => push_inlines(stack, values, depth + 1),
-                    BlockKind::Quote(values) => push_blocks(stack, values, depth + 1),
-                    BlockKind::List(_, _, _, items) => {
-                        let mut index = items.len();
-                        while index > 0 {
-                            index -= 1;
-                            push_blocks(stack, items[index], depth + 1);
-                        }
-                    },
+                    BlockKind::Paragraph(values) | BlockKind::Heading(_, values) => stack.push(
+                        (Visit::Inlines(values, 0), depth + 1),
+                    ),
+                    BlockKind::Quote(values) => stack.push((Visit::Blocks(values, 0), depth + 1)),
+                    BlockKind::List(_, _, _, items) => stack.push(
+                        (Visit::Items(items, 0), depth + 1),
+                    ),
                     _ => (),
                 }
             },
-            Visit::Inline(inline) => {
+            Visit::Inlines(values, index) => {
+                if index == values.len() {
+                    continue
+                }
+                count += 1;
+                if count > 250000 || depth > 256 {
+                    return Result::Err(Error { line: 0, message: "AST walk limit exceeded" })
+                }
+                if index + 1 < values.len() {
+                    stack.push((Visit::Inlines(values, index + 1), depth));
+                }
+                let inline = values[index];
                 visit_inline(inline);
                 match inline {
-                    Inline::Emphasis(values) => push_inlines(stack, values, depth + 1),
-                    Inline::Strong(values) => push_inlines(stack, values, depth + 1),
-                    Inline::Link(_, _, values) => push_inlines(stack, values, depth + 1),
-                    Inline::Image(_, _, values) => push_inlines(stack, values, depth + 1),
+                    Inline::Emphasis(values) | Inline::Strong(values) | Inline::Link(_, _, values) | Inline::Image(_, _, values) => stack.push(
+                        (Visit::Inlines(values, 0), depth + 1),
+                    ),
                     _ => (),
                 }
+            },
+            Visit::Items(items, index) => {
+                if index == items.len() {
+                    continue
+                }
+                items_seen += 1;
+                if items_seen > 250000 {
+                    return Result::Err(
+                        Error { line: 0, message: "AST list item walk limit exceeded" },
+                    )
+                }
+                if index + 1 < items.len() {
+                    stack.push((Visit::Items(items, index + 1), depth));
+                }
+                stack.push((Visit::Blocks(items[index], 0), depth));
             },
         }
     }
@@ -70,14 +85,14 @@ pub fn walk(document: Document, visit_block: (Block) -> (), visit_inline: (Inlin
     Error,
 ] {
     let stack: Vec[(Visit, isize)] = Vec::new();
-    push_blocks(stack, document.blocks, 0);
+    stack.push((Visit::Blocks(document.blocks, 0), 0));
     walk_stack(stack, visit_block, visit_inline)
 }
 
 pub fn inline_text(inlines: Vec[Inline]) -> Result[string, Error] {
     let output = text::StringBuilder::new();
     let stack: Vec[(Visit, isize)] = Vec::new();
-    push_inlines(stack, inlines, 0);
+    stack.push((Visit::Inlines(inlines, 0), 0));
     walk_stack(
         stack,
         |_| (),

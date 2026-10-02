@@ -62,12 +62,15 @@ indices; bracket handling prevents nested links while supporting formatted image
 descriptions.
 
 `walk(document, visit_block, visit_inline)` visits nodes in source order with
-parents before children. It uses an explicit stack and accepts captured
+parents before children. It uses an explicit stack of sibling cursors with O(depth)
+auxiliary storage, without pushing every child of a wide node, and accepts captured
 callbacks. `inline_text(inlines)` extracts decoded text, code content and line
 breaks without formatting tags or HTML escaping; image/link labels contribute
 their text. Walks have limits of 250,000 visited nodes and depth 256, and return
-errors for manually constructed cyclic/deep ASTs. Callbacks must not mutate the
-tree during traversal.
+errors for manually constructed cyclic/deep ASTs. A separate 250,000-item budget
+bounds list-item scanning, including empty items in caller-built ASTs. Errors may
+follow earlier visitor callbacks; no unvisited siblings are materialized up front.
+Callbacks must not mutate the tree during traversal.
 
 AST vectors and maps have normal GoML shared-storage semantics. Returning an AST
 does not make its container storage immutable, and the module does not provide
