@@ -1,0 +1,53 @@
+package tests;
+
+use ecosystem::markdown;
+use std::testing;
+
+#[test]
+fn wide_walks_fail_at_the_visit_budget_without_materializing_sibling_stacks() -> () {
+    let children = Vec::new();
+    for _ in 0..300000 {
+        children.push(markdown::Inline::Text(""));
+    }
+    let span = markdown::LineSpan { start: 0, end: 0 };
+    let doc = markdown::Document {
+        blocks: Vec::from_array(
+            [markdown::Block { span, kind: markdown::BlockKind::Paragraph(children) }],
+        ),
+        references: HashMap::new(),
+    };
+    let visited = Ref::new(0);
+    testing::assert_err(
+        markdown::walk(doc, |_| visited.set(visited.get() + 1), |_| visited.set(visited.get() + 1)),
+    );
+    testing::assert_eq(visited.get(), 250000);
+    let items: Vec[Vec[markdown::Block]] = Vec::new();
+    for _ in 0..250001 {
+        items.push(Vec::new());
+    }
+    let empty = markdown::Document {
+        blocks: Vec::from_array(
+            [markdown::Block { span, kind: markdown::BlockKind::List(false, 1, true, items) }],
+        ),
+        references: HashMap::new(),
+    };
+    testing::assert_err(markdown::walk(empty, |_| (), |_| ()));
+}
+
+#[test]
+fn cursor_walks_preserve_nested_source_order() -> () {
+    let doc = testing::expect_ok(markdown::parse("> one *two*\n\n- three\n- four"), "parse");
+    let text = Vec::new();
+    testing::assert_ok(
+        markdown::walk(
+            doc,
+            |_| (),
+            |inline| {
+                if let markdown::Inline::Text(value) = inline {
+                    text.push(value);
+                }
+            },
+        ),
+    );
+    testing::assert_eq(text.join("|"), "one |two|three|four");
+}

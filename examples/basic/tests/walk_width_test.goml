@@ -1,0 +1,22 @@
+package tests;
+
+use ecosystem::markdown;
+use std::testing;
+
+#[test]
+fn downstream_visitors_keep_parent_before_child_order() -> () {
+    let doc = testing::expect_ok(markdown::parse("# A\n\nB *C*"), "parse");
+    let events = Vec::new();
+    testing::assert_ok(
+        markdown::walk(
+            doc,
+            |_| events.push("block"),
+            |value| match value {
+                markdown::Inline::Text(text) => events.push(text),
+                markdown::Inline::Emphasis(_) => events.push("emphasis"),
+                _ => (),
+            },
+        ),
+    );
+    testing::assert_eq(events.join("|"), "block|A|block|B |emphasis|C");
+}
