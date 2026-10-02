@@ -126,15 +126,15 @@ Run from this library repository:
 (cd ../verification && just ecosystem-test markdown)
 ```
 
-The command checks formatting, library tests, a separately resolved consumer,
-fresh/cached consumer builds, its executable and reference interoperability.
+The command checks formatting, library tests, the example,
+fresh/cached example builds, its executable and reference interoperability.
 Library tests cover AST construction/inspection, spans, captured visitors,
 Unicode/reference normalization, nested lists, literal tabs, escaping, URI
-policy, render options and resource/cycle errors. The independent consumer
+policy, render options and resource/cycle errors. The example
 imports only public APIs and also offers stdin conversion through `--safe`,
 `--commonmark` and a JSON-array batch interface through `--json`.
 
-The consumer’s native `tests/reference_test.gom` checks all 652 examples from the [CommonMark 0.31.2 reference corpus](https://spec.commonmark.org/0.31.2/spec.json), together with all 2,125 named entities. The checked-in independent corpus records the original CommonMark SHA-256 digest `d431b29d97b6f73e69d547109cf5081578fac931e72afe95639ebe766c1b2a20`; running the tests needs no Python or network access. The CommonMark specification and examples are by John MacFarlane, licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+The example’s native `tests/reference_test.gom` checks all 652 examples from the [CommonMark 0.31.2 reference corpus](https://spec.commonmark.org/0.31.2/spec.json), together with all 2,125 named entities. The checked-in independent corpus records the original CommonMark SHA-256 digest `d431b29d97b6f73e69d547109cf5081578fac931e72afe95639ebe766c1b2a20`; running the tests needs no Python or network access. The CommonMark specification and examples are by John MacFarlane, licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 
 `entities.gom` is now a generated compatibility wrapper over ecosystem::html's
 shared lookup. The independently sourced [HTML entity data](../html/data/entities.json)
@@ -145,3 +145,15 @@ then generates the shared lookup and wrapper deterministically. Its ordinary
 native test verifies both files on each `(cd ../verification && just ecosystem-test markdown)` run.
 
 To regenerate, run `../../../goml-dev/stage2/bin/goml build` from `tools`, then `_artifact/bin/markdown_entities generate ..`. `check` verifies the file without writing. The data and generator need no Python installation.
+
+## Development and examples
+
+Requires GoML 0.1.55 or newer. The `examples/basic/` example shares the root manifest; test-only helpers are declared in `[dev-dependencies]`. From the library root, run:
+
+```sh
+goml run --example basic
+goml test
+goml verify --timeout 300s
+```
+
+`goml test` builds the example and runs its tests. `goml verify` repeats the example checks as an independent module against an isolated registry snapshot. `(cd ../verification && just ecosystem-test markdown)` also retains the library-specific smoke and compatibility checks.

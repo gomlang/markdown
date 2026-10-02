@@ -3,3 +3,6 @@ path = "ecosystem::markdown"
 
 [dependencies]
 "ecosystem::html" = "0.1.0"
+
+[dev-dependencies]
+"ecosystem::verification" = "0.1.0"
