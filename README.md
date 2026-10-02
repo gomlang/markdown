@@ -6,7 +6,7 @@ with exact HTML comparison. Parsing, rendering and Unicode punctuation/symbol
 classification are implemented in GoML, alongside `std::unicode` whitespace and
 case folding. This module has no direct Go FFI bindings or native dependencies.
 
-```gom
+```goml
 use ecosystem::markdown;
 
 fn render_page(source: string) -> Result[string, markdown::Error] {
@@ -113,7 +113,7 @@ allocate before they are written.
 
 ## Validation and data provenance
 
-`punctuation.gom` contains 338 sorted, disjoint ranges covering the 8,612 Unicode
+`punctuation.goml` contains 338 sorted, disjoint ranges covering the 8,612 Unicode
 15.0.0 scalars in general categories P and S. The table comes from the official
 [UnicodeData.txt](https://www.unicode.org/Public/15.0.0/ucd/UnicodeData.txt), whose
 SHA-256 is `806e9aed65037197f1ec85e12be6e8cd870fc5608b4de0fffd990f689f376a73`.
@@ -134,9 +134,9 @@ policy, render options and resource/cycle errors. The example
 imports only public APIs and also offers stdin conversion through `--safe`,
 `--commonmark` and a JSON-array batch interface through `--json`.
 
-The example’s native `tests/reference_test.gom` checks all 652 examples from the [CommonMark 0.31.2 reference corpus](https://spec.commonmark.org/0.31.2/spec.json), together with all 2,125 named entities. The checked-in independent corpus records the original CommonMark SHA-256 digest `d431b29d97b6f73e69d547109cf5081578fac931e72afe95639ebe766c1b2a20`; running the tests needs no Python or network access. The CommonMark specification and examples are by John MacFarlane, licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+The example’s native `tests/reference_test.goml` checks all 652 examples from the [CommonMark 0.31.2 reference corpus](https://spec.commonmark.org/0.31.2/spec.json), together with all 2,125 named entities. The checked-in independent corpus records the original CommonMark SHA-256 digest `d431b29d97b6f73e69d547109cf5081578fac931e72afe95639ebe766c1b2a20`; running the tests needs no Python or network access. The CommonMark specification and examples are by John MacFarlane, licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 
-`entities.gom` is now a generated compatibility wrapper over ecosystem::html's
+`entities.goml` is now a generated compatibility wrapper over ecosystem::html's
 shared lookup. The independently sourced [HTML entity data](../html/data/entities.json)
 comes from CPython 3.12.3 `html.entities.html5`, restricted to semicolon-ended names.
 Its license remains in [LICENSE.entities.txt](LICENSE.entities.txt) and the HTML
@@ -148,7 +148,7 @@ To regenerate, run `../../../goml-dev/stage2/bin/goml build` from `tools`, then 
 
 ## Development and examples
 
-Requires GoML 0.1.55 or newer. The `examples/basic/` example shares the root manifest; test-only helpers are declared in `[dev-dependencies]`. From the library root, run:
+Requires GoML 0.1.56 or newer. The `examples/basic/` example shares the root manifest; test-only helpers are declared in `[dev-dependencies]`. From the library root, run:
 
 ```sh
 goml run --example basic

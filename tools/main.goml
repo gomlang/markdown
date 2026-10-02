@@ -81,17 +81,17 @@ pub fn generate(root: string) -> Result[string, string] {
 }
 
 pub fn verify(root: string) -> Result[(), string] {
-    if fs::read_file_structured(root + "/../html/legacy.gom").map_err(|error| error.to_string())?
+    if fs::read_file_structured(root + "/../html/legacy.goml").map_err(|error| error.to_string())?
         != generate_legacy(root)? {
         return Result::Err("generated HTML legacy names differ");
     }
-    let existing = fs::read_file_structured(root + "/../html/entities.gom").map_err(
+    let existing = fs::read_file_structured(root + "/../html/entities.goml").map_err(
         |error| error.to_string(),
     )?;
     if generate(root)? != existing {
         return Result::Err("generated HTML entities differ; run the native tool with generate");
     }
-    if fs::read_file_structured(root + "/entities.gom").map_err(|error| error.to_string())?
+    if fs::read_file_structured(root + "/entities.goml").map_err(|error| error.to_string())?
         != wrapper() {
         return Result::Err("generated Markdown entity wrapper differs");
     }
@@ -141,13 +141,13 @@ fn run() -> Result[(), string] {
     if command == "check" {
         verify(root)
     } else if command == "generate" {
-        fs::write_file_structured(root + "/../html/legacy.gom", generate_legacy(root)?).map_err(
+        fs::write_file_structured(root + "/../html/legacy.goml", generate_legacy(root)?).map_err(
             |error| error.to_string(),
         )?;
-        fs::write_file_structured(root + "/../html/entities.gom", generate(root)?).map_err(
+        fs::write_file_structured(root + "/../html/entities.goml", generate(root)?).map_err(
             |error| error.to_string(),
         )?;
-        fs::write_file_structured(root + "/entities.gom", wrapper()).map_err(
+        fs::write_file_structured(root + "/entities.goml", wrapper()).map_err(
             |error| error.to_string(),
         )
     } else {
