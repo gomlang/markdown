@@ -46,3 +46,31 @@ fn exported_ast_rendering_and_captured_visitors() -> () {
         "<h2>Custom &amp; safe</h2>\n",
     );
 }
+
+#[test]
+fn downstream_render_expansion_obeys_remaining_budget() -> () {
+    let doc = testing::expect_ok(md::parse("[界](/界?q=a&b=1)"), "parse");
+    let expected = "<p><a href=\"/%E7%95%8C?q=a&amp;b=1\">界</a></p>\n";
+    testing::assert_eq(
+        testing::expect_ok(
+            md::render(
+                doc,
+                md::RenderOptions {
+                    max_bytes: expected.byte_len(),
+                    ..md::RenderOptions::standard(),
+                },
+            ),
+            "render",
+        ),
+        expected,
+    );
+    testing::assert_err(
+        md::render(
+            doc,
+            md::RenderOptions {
+                max_bytes: expected.byte_len() - 1,
+                ..md::RenderOptions::standard(),
+            },
+        ),
+    );
+}

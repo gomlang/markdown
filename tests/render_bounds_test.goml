@@ -1,0 +1,82 @@
+package tests;
+
+use ecosystem::markdown;
+use std::testing;
+
+#[test]
+fn expanded_ast_fields_respect_exact_render_budgets() -> () {
+    let span = markdown::LineSpan { start: 0, end: 0 };
+    let cases = Vec::from_array(
+        [
+            markdown::BlockKind::Paragraph(
+                Vec::from_array([markdown::Inline::Text("<&界".repeat(1000))]),
+            ),
+            markdown::BlockKind::Paragraph(
+                Vec::from_array(
+                    [markdown::Inline::Link("/界?q=a&b=1", "<&".repeat(1000), Vec::new())],
+                ),
+            ),
+            markdown::BlockKind::Paragraph(
+                Vec::from_array(
+                    [
+                        markdown::Inline::Image(
+                            "/界".repeat(1000),
+                            "<&",
+                            Vec::from_array([markdown::Inline::Text("<&")]),
+                        ),
+                    ],
+                ),
+            ),
+            markdown::BlockKind::Code("<&".repeat(1000), "<&".repeat(1000)),
+            markdown::BlockKind::Html("<&".repeat(1000)),
+        ],
+    );
+    for kind in cases {
+        let document = markdown::Document {
+            blocks: Vec::from_array([markdown::Block { kind, span }]),
+            references: HashMap::new(),
+        };
+        let expected = testing::expect_ok(
+            markdown::render(document, markdown::RenderOptions::standard()),
+            "render",
+        );
+        for maximum in[0, 8, expected.byte_len() - 1] {
+            testing::assert_err(
+                markdown::render(
+                    document,
+                    markdown::RenderOptions {
+                        max_bytes: maximum,
+                        ..markdown::RenderOptions::standard(),
+                    },
+                ),
+            );
+        }
+        testing::assert_eq(
+            testing::expect_ok(
+                markdown::render(
+                    document,
+                    markdown::RenderOptions {
+                        max_bytes: expected.byte_len(),
+                        ..markdown::RenderOptions::standard(),
+                    },
+                ),
+                "exact budget",
+            ),
+            expected,
+        );
+    }
+    testing::assert_eq(
+        testing::expect_ok(markdown::to_html("[x](/界?q=a&b=1)"), "URL"),
+        "<p><a href=\"/%%E7%%95%%8C?q=a&amp;b=1\">x</a></p>\n".replace("%%", "%"),
+    );
+}
+
+#[test]
+fn scheme_policy_keeps_relative_and_whitespace_behavior() -> () {
+    for value in["/path:part", "a/b:c", "HTTP://x", " m a i l t o :x", "a".repeat(10000)] {
+        testing::assert(markdown::safe_url(value));
+    }
+    for value in["javascript:x", " java\nscript:x", "a".repeat(10000) + ":x", ":x"] {
+        testing::assert(!markdown::safe_url(value));
+    }
+}
