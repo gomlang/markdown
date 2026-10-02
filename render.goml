@@ -7,41 +7,28 @@ pub fn escape_html(value: string) -> string {
     html::escape_text(value)
 }
 
-fn encode_url(value: string) -> string {
-    let result = text::StringBuilder::new();
-    let hex = "0123456789ABCDEF";
-    let allowed_bytes = "-._~:/?#@!$&'()*+,;=%".to_bytes();
-    for byte in value.to_bytes() {
-        if (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122) || (byte >= 48 && byte <= 57)
-            || allowed_bytes.position(|allowed| allowed == byte).is_some() {
-            result.write_string(string_from_utf8(Vec::from_array([byte])).1);
-        } else {
-            result.write_char('%');
-            result.write_char(hex.get((byte / 16).to_isize()));
-            result.write_char(hex.get((byte % 16).to_isize()));
-        }
-    }
-    result.finish()
-}
-
 pub fn safe_url(value: string) -> bool {
-    let normalized = text::StringBuilder::new();
+    let mut scheme = "";
+    let mut too_long = false;
     for ch in value.chars() {
-        if ch > ' ' && !whitespace(ch) {
-            normalized.write_char(ch);
+        if ch <= ' ' || whitespace(ch) {
+            continue
         }
-    }
-    let value = normalized.finish();
-    let Some((scheme, _)) = value.split_once(":") else {
-        return true
-    };
-    for ch in scheme.chars() {
+        if ch == ':' {
+            let lower = scheme.to_ascii_lowercase();
+            return !too_long
+                && (lower == "http" || lower == "https" || lower == "mailto" || lower == "ftp")
+        }
         if !ascii_letter(ch) && !ascii_digit(ch) && !"+.-".contains(ch.to_string()) {
             return true
         }
+        if scheme.byte_len() < 6 {
+            scheme += ch.to_string();
+        } else {
+            too_long = true;
+        }
     }
-    let lower = scheme.to_ascii_lowercase();
-    lower == "http" || lower == "https" || lower == "mailto" || lower == "ftp"
+    true
 }
 
 struct Renderer {
@@ -58,6 +45,37 @@ impl Renderer {
         Result::Ok(())
     }
 
+    fn escaped(self: Renderer, value: string) -> Result[(), Error] {
+        let escaped = html::escape_with(
+            value,
+            html::EscapeOptions::text(),
+            self.options.max_bytes - self.output.len(),
+        ).map_err(|_| Error { line: 0, message: "rendered output exceeds size limit" })?;
+        self.write(escaped)
+    }
+
+    fn url(self: Renderer, value: string) -> Result[(), Error] {
+        let hex = "0123456789ABCDEF";
+        let allowed = "-._~:/?#@!$&'()*+,;=%".to_bytes();
+        let mut start = 0;
+        for index in 0..value.byte_len() {
+            let byte = value.byte_get(index);
+            if (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122)
+                || (byte >= 48 && byte <= 57)
+                || allowed.contains(byte) {
+                continue
+            }
+            if start < index {
+                self.escaped(value.byte_slice(start, index))?;
+            }
+            self.write("%")?;
+            self.write(hex.byte_slice((byte / 16).to_isize(), (byte / 16).to_isize() + 1))?;
+            self.write(hex.byte_slice((byte % 16).to_isize(), (byte % 16).to_isize() + 1))?;
+            start = index + 1;
+        }
+        self.escaped(value.byte_slice(start, value.byte_len()))
+    }
+
     fn depth(self: Renderer, depth: isize) -> Result[(), Error] {
         if depth > self.options.max_depth {
             Result::Err(Error { line: 0, message: "render nesting limit exceeded" })
@@ -70,24 +88,22 @@ impl Renderer {
         self.depth(depth)?;
         for value in values {
             match value {
-                Inline::Text(text) => self.write(escape_html(text))?,
+                Inline::Text(text) => self.escaped(text)?,
                 Inline::Code(text) => {
                     if !plain {
                         self.write("<code>")?;
                     }
-                    self.write(escape_html(text))?;
+                    self.escaped(text)?;
                     if !plain {
                         self.write("</code>")?;
                     }
                 },
                 Inline::Html(text) => if !plain {
-                    self.write(
-                        if self.options.allow_raw_html {
-                            text
-                        } else {
-                            escape_html(text)
-                        },
-                    )?;
+                    if self.options.allow_raw_html {
+                        self.write(text)?;
+                    } else {
+                        self.escaped(text)?;
+                    }
                 },
                 Inline::SoftBreak => self.write(
                     if plain || !self.options.hard_breaks {
@@ -132,9 +148,13 @@ impl Renderer {
                         } else {
                             ""
                         };
-                        self.write("<a href=\"" + escape_html(encode_url(url)) + "\"")?;
+                        self.write("<a href=\"")?;
+                        self.url(url)?;
+                        self.write("\"")?;
                         if title != "" {
-                            self.write(" title=\"" + escape_html(title) + "\"")?;
+                            self.write(" title=\"")?;
+                            self.escaped(title)?;
+                            self.write("\"")?;
                         }
                         self.write(">")?;
                     }
@@ -150,13 +170,17 @@ impl Renderer {
                         } else {
                             ""
                         };
-                        self.write("<img src=\"" + escape_html(encode_url(url)) + "\" alt=\"")?;
+                        self.write("<img src=\"")?;
+                        self.url(url)?;
+                        self.write("\" alt=\"")?;
                     }
                     self.inlines(children, depth + 1, true)?;
                     if !plain {
                         self.write("\"")?;
                         if title != "" {
-                            self.write(" title=\"" + escape_html(title) + "\"")?;
+                            self.write(" title=\"")?;
+                            self.escaped(title)?;
+                            self.write("\"")?;
                         }
                         self.write(
                             if self.options.xhtml {
@@ -210,17 +234,19 @@ impl Renderer {
                         words[0].split("\t")[0]
                     };
                     if language != "" {
-                        self.write(" class=\"language-" + escape_html(language) + "\"")?;
+                        self.write(" class=\"language-")?;
+                        self.escaped(language)?;
+                        self.write("\"")?;
                     }
-                    self.write(">" + escape_html(literal) + "</code></pre>\n")?;
+                    self.write(">")?;
+                    self.escaped(literal)?;
+                    self.write("</code></pre>\n")?;
                 },
-                BlockKind::Html(literal) => self.write(
-                    if self.options.allow_raw_html {
-                        literal
-                    } else {
-                        escape_html(literal)
-                    },
-                )?,
+                BlockKind::Html(literal) => if self.options.allow_raw_html {
+                    self.write(literal)?;
+                } else {
+                    self.escaped(literal)?;
+                },
                 BlockKind::ThematicBreak => self.write(
                     if self.options.xhtml {
                         "<hr />\n"

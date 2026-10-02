@@ -108,8 +108,12 @@ with a recoverable error. This is an operation budget, not a wall-clock timeout.
 Parsing allocates block text and inline nodes; it is not an incremental editor
 parser or a zero-copy rope. Input limits and parse-node limits also constrain
 large valid documents. Applications handling larger documents can set explicit
-limits. Output checking limits emitted HTML; intermediate escaped strings still
-allocate before they are written.
+limits. Escaped text is measured against the remaining output budget before its escaped
+copy is allocated. URL encoding emits checked fragments directly, and scheme
+checks retain at most six ASCII characters. Oversized literal, title, language,
+and destination fields in caller-built ASTs therefore cannot first allocate an
+unbounded expanded escape buffer. The output limit does not bound the caller's
+existing AST or total process memory.
 
 ## Validation and data provenance
 
