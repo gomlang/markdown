@@ -216,3 +216,17 @@ fn configurable_breaks_manual_ast_and_plain_text() -> () {
         "<p>A &lt; <strong><code>B</code></strong><br>\nC</p>\n",
     );
 }
+
+#[test]
+fn outdented_html_blocks_end_lazy_containers() -> () {
+    testing::assert_eq(
+        commonmark("> foo\n<span>\n"),
+        "<blockquote>\n<p>foo</p>\n</blockquote>\n<span>\n",
+    );
+    testing::assert_eq(commonmark("- foo\n<span>\n"), "<ul>\n<li>foo</li>\n</ul>\n<span>\n");
+    testing::assert_eq(
+        commonmark("> foo\n> <span>\n"),
+        "<blockquote>\n<p>foo\n<span></p>\n</blockquote>\n",
+    );
+    testing::assert_eq(commonmark("- foo\n  <span>\n"), "<ul>\n<li>foo\n<span></li>\n</ul>\n");
+}

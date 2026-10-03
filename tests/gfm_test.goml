@@ -1,0 +1,294 @@
+package tests;
+
+use ecosystem::markdown as md;
+use std::testing;
+
+fn gfm(source: string) -> string {
+    testing::expect_ok(
+        md::render_gfm(
+            testing::expect_ok(md::parse_gfm(source), "parse GFM"),
+            md::RenderOptions { xhtml: false, ..md::RenderOptions::commonmark() },
+        ),
+        "render GFM",
+    )
+}
+
+#[test]
+fn official_gfm_table_and_task_list_examples() -> () {
+    testing::assert_eq(
+        gfm("| foo | bar |\n| --- | --- |\n| baz | bim |\n"),
+        "<table>\n<thead>\n<tr>\n<th>foo</th>\n<th>bar</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>baz</td>\n<td>bim</td>\n</tr>\n</tbody>\n</table>\n",
+    );
+    testing::assert_eq(
+        gfm("| abc | defghi |\n:-: | -----------:\nbar | baz\n"),
+        "<table>\n<thead>\n<tr>\n<th align=\"center\">abc</th>\n<th align=\"right\">defghi</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td align=\"center\">bar</td>\n<td align=\"right\">baz</td>\n</tr>\n</tbody>\n</table>\n",
+    );
+    testing::assert_eq(
+        gfm("| f\\|oo  |\n| ------ |\n| b `\\|` az |\n| b **\\|** im |\n"),
+        "<table>\n<thead>\n<tr>\n<th>f|oo</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>b <code>|</code> az</td>\n</tr>\n<tr>\n<td>b <strong>|</strong> im</td>\n</tr>\n</tbody>\n</table>\n",
+    );
+    testing::assert_eq(
+        gfm("| abc | def |\n| --- | --- |\n| bar | baz |\n> bar\n"),
+        "<table>\n<thead>\n<tr>\n<th>abc</th>\n<th>def</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>bar</td>\n<td>baz</td>\n</tr>\n</tbody>\n</table>\n<blockquote>\n<p>bar</p>\n</blockquote>\n",
+    );
+    testing::assert_eq(
+        gfm("| abc | def |\n| --- | --- |\n| bar | baz |\nbar\n\nbar\n"),
+        "<table>\n<thead>\n<tr>\n<th>abc</th>\n<th>def</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>bar</td>\n<td>baz</td>\n</tr>\n<tr>\n<td>bar</td>\n<td></td>\n</tr>\n</tbody>\n</table>\n<p>bar</p>\n",
+    );
+    testing::assert_eq(
+        gfm("| abc | def |\n| --- |\n| bar |\n"),
+        "<p>| abc | def |\n| --- |\n| bar |</p>\n",
+    );
+    testing::assert_eq(
+        gfm("| abc | def |\n| --- | --- |\n| bar |\n| bar | baz | boo |\n"),
+        "<table>\n<thead>\n<tr>\n<th>abc</th>\n<th>def</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>bar</td>\n<td></td>\n</tr>\n<tr>\n<td>bar</td>\n<td>baz</td>\n</tr>\n</tbody>\n</table>\n",
+    );
+    testing::assert_eq(
+        gfm("| abc | def |\n| --- | --- |\n"),
+        "<table>\n<thead>\n<tr>\n<th>abc</th>\n<th>def</th>\n</tr>\n</thead>\n</table>\n",
+    );
+    testing::assert_eq(
+        gfm("- [ ] foo\n- [x] bar\n"),
+        "<ul>\n<li><input disabled=\"\" type=\"checkbox\"> foo</li>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> bar</li>\n</ul>\n",
+    );
+    testing::assert_eq(
+        gfm("- [x] foo\n  - [ ] bar\n  - [x] baz\n- [ ] bim\n"),
+        "<ul>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> foo\n<ul>\n<li><input disabled=\"\" type=\"checkbox\"> bar</li>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> baz</li>\n</ul>\n</li>\n<li><input disabled=\"\" type=\"checkbox\"> bim</li>\n</ul>\n",
+    );
+}
+
+#[test]
+fn extensions_are_opt_in_and_independently_selectable() -> () {
+    let source = "| a |\n| - |\n\n- [x] done\n";
+    let standard = testing::expect_ok(md::to_html(source), "standard HTML");
+    testing::assert_eq(standard, "<p>| a |\n| - |</p>\n<ul>\n<li>[x] done</li>\n</ul>\n");
+    testing::assert_eq(
+        testing::expect_ok(
+            md::render_gfm(
+                testing::expect_ok(
+                    md::parse_gfm_with_options(
+                        source,
+                        md::ParseOptions::standard(),
+                        md::GfmOptions::disabled(),
+                    ),
+                    "disabled",
+                ),
+                md::RenderOptions::standard(),
+            ),
+            "render disabled",
+        ),
+        standard,
+    );
+    let tables = testing::expect_ok(
+        md::parse_gfm_with_options(
+            source,
+            md::ParseOptions::standard(),
+            md::GfmOptions { tables: true, task_lists: false },
+        ),
+        "only tables",
+    );
+    testing::assert(
+        testing::expect_ok(md::render_gfm(tables, md::RenderOptions::standard()), "tables").contains(
+            "<li>[x] done</li>",
+        ),
+    );
+    let tasks = testing::expect_ok(
+        md::parse_gfm_with_options(
+            source,
+            md::ParseOptions::standard(),
+            md::GfmOptions { tables: false, task_lists: true },
+        ),
+        "only tasks",
+    );
+    testing::assert(
+        testing::expect_ok(md::render_gfm(tasks, md::RenderOptions::standard()), "tasks").starts_with(
+            "<p>| a |\n| - |</p>\n",
+        ),
+    );
+}
+
+#[test]
+fn public_table_ast_preserves_alignment_cells_and_source_spans() -> () {
+    let document = testing::expect_ok(
+        md::parse_gfm(
+            "before\n\nA | B | C | D\n:- | :-: | -: | -\nx | y\nz | z | z | z | ignored\n",
+        ),
+        "table AST",
+    );
+    testing::assert_eq(document.blocks.len(), 2);
+    testing::assert_eq(document.blocks[1].span.start, 2);
+    testing::assert_eq(document.blocks[1].span.end, 5);
+    if let md::GfmBlockKind::Table(table) = document.blocks[1].kind {
+        testing::assert(
+            table.alignments
+                == Vec::from_array(
+                    [
+                        md::Alignment::Left,
+                        md::Alignment::Center,
+                        md::Alignment::Right,
+                        md::Alignment::Default,
+                    ],
+                ),
+        );
+        testing::assert_eq(table.header.len(), 4);
+        testing::assert_eq(table.rows.len(), 2);
+        testing::assert_eq(table.rows[1].len(), 4);
+        testing::assert_eq(testing::expect_ok(md::inline_text(table.rows[0][2]), "empty cell"), "");
+    } else {
+        testing::assert(false);
+    }
+}
+
+#[test]
+fn table_pipes_references_paragraphs_and_containers() -> () {
+    let table = "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n</table>\n";
+    testing::assert_eq(gfm("intro\na\n|-|\n"), "<p>intro</p>\n" + table);
+    testing::assert_eq(
+        gfm("> |a|\n> |-|\noutside\n"),
+        "<blockquote>\n" + table + "</blockquote>\n<p>outside</p>\n",
+    );
+    testing::assert_eq(
+        gfm("- |a|\n  |-|\noutside\n"),
+        "<ul>\n<li>\n" + table + "</li>\n</ul>\n<p>outside</p>\n",
+    );
+    testing::assert_eq(
+        gfm("| `a|b` |\n| - | - |\n"),
+        "<table>\n<thead>\n<tr>\n<th>`a</th>\n<th>b`</th>\n</tr>\n</thead>\n</table>\n",
+    );
+    testing::assert_eq(
+        gfm("| [ref] |\n| - |\n\n[ref]: /target\n"),
+        "<table>\n<thead>\n<tr>\n<th><a href=\"/target\">ref</a></th>\n</tr>\n</thead>\n</table>\n",
+    );
+    testing::assert_eq(gfm("| a |\n| : |\n"), "<p>| a |\n| : |</p>\n");
+    testing::assert_eq(gfm("| a |\n| - - |\n"), "<p>| a |\n| - - |</p>\n");
+    testing::assert_eq(gfm("a\n---\n"), "<h2>a</h2>\n");
+    testing::assert_eq(
+        gfm("a\n:-\n"),
+        "<table>\n<thead>\n<tr>\n<th align=\"left\">a</th>\n</tr>\n</thead>\n</table>\n",
+    );
+    testing::assert_eq(gfm("|\n|-|\n"), "<p>|\n|-|</p>\n");
+    testing::assert_eq(gfm("|a|\n|-|\n    code\n"), table + "<pre><code>code\n</code></pre>\n");
+    testing::assert_eq(
+        gfm("|a|\n|-|\n2. item\n"),
+        table + "<ol start=\"2\">\n<li>item</li>\n</ol>\n",
+    );
+    testing::assert_eq(gfm("|a|\n|-|\n<span>\n"), table + "<span>\n");
+}
+
+#[test]
+fn tasks_recognize_only_first_paragraph_markers_and_expose_state() -> () {
+    let doc = testing::expect_ok(
+        md::parse_gfm(
+            "3. [X]\tready\n4. [\t] todo\n5. [x]tight\n6. \\[x] escaped\n7. [z] no\n8. `code`\n\n   [x] later\n",
+        ),
+        "task list",
+    );
+    if let md::GfmBlockKind::List(ordered, start, tight, items) = doc.blocks[0].kind {
+        testing::assert(ordered);
+        testing::assert_eq(start, 3);
+        testing::assert(!tight);
+        testing::assert(items[0].checked == Option::Some(true));
+        testing::assert(items[1].checked == Option::Some(false));
+        for index in 2..items.len() {
+            testing::assert(items[index].checked.is_none());
+        }
+    } else {
+        testing::assert(false);
+    }
+    testing::assert_eq(
+        gfm("- [x] first\n\n  second\n"),
+        "<ul>\n<li>\n<p><input checked=\"\" disabled=\"\" type=\"checkbox\"> first</p>\n<p>second</p>\n</li>\n</ul>\n",
+    );
+    testing::assert_eq(gfm("[x] ordinary\n"), "<p>[x] ordinary</p>\n");
+    testing::assert_eq(gfm("- [ ]\n"), "<ul>\n<li>[ ]</li>\n</ul>\n");
+    testing::assert_eq(
+        gfm("- [ ] \n"),
+        "<ul>\n<li><input disabled=\"\" type=\"checkbox\"> </li>\n</ul>\n",
+    );
+    testing::assert_eq(gfm("- # [x] heading\n"), "<ul>\n<li>\n<h1>[x] heading</h1>\n</li>\n</ul>\n");
+}
+
+#[test]
+fn gfm_safe_rendering_and_resource_limits() -> () {
+    let source = "| <i>x</i> | [bad](javascript:alert(1)) |\n| - | - |\n\n- [x] <b>&</b>\n";
+    let output = testing::expect_ok(md::to_html_gfm(source), "safe extensions");
+    testing::assert(output.contains("<th>&lt;i&gt;x&lt;/i&gt;</th>"));
+    testing::assert(output.contains("<a href=\"\">bad</a>"));
+    testing::assert(output.contains("type=\"checkbox\" /> &lt;b&gt;&amp;&lt;/b&gt;"));
+    let doc = testing::expect_ok(md::parse_gfm(source), "limits AST");
+    testing::assert_eq(
+        testing::expect_ok(
+            md::render_gfm(
+                doc,
+                md::RenderOptions { max_bytes: output.byte_len(), ..md::RenderOptions::standard() },
+            ),
+            "exact budget",
+        ),
+        output,
+    );
+    testing::assert_err(
+        md::render_gfm(
+            doc,
+            md::RenderOptions { max_bytes: output.byte_len() - 1, ..md::RenderOptions::standard() },
+        ),
+    );
+    testing::assert_err(
+        md::parse_gfm_with_options(
+            "|a|b|c|\n|-|-|-|\n" + "x\n".repeat(200),
+            md::ParseOptions { max_nodes: 100, ..md::ParseOptions::standard() },
+            md::GfmOptions::standard(),
+        ),
+    );
+    testing::assert_err(
+        md::parse_gfm_with_options(
+            "|a|\n|-|\n",
+            md::ParseOptions { max_work: 1, ..md::ParseOptions::standard() },
+            md::GfmOptions::standard(),
+        ),
+    );
+    let cycle: Vec[md::GfmBlock] = Vec::new();
+    cycle.push(
+        md::GfmBlock {
+            kind: md::GfmBlockKind::Quote(cycle),
+            span: md::LineSpan { start: 0, end: 0 },
+        },
+    );
+    testing::assert_err(
+        md::render_gfm(
+            md::GfmDocument { blocks: cycle, references: HashMap::new() },
+            md::RenderOptions::standard(),
+        ),
+    );
+    let invalid = md::GfmDocument {
+        blocks: Vec::from_array(
+            [
+                md::GfmBlock {
+                    kind: md::GfmBlockKind::Table(
+                        md::Table {
+                            header: Vec::from_array([Vec::new()]),
+                            alignments: Vec::new(),
+                            rows: Vec::new(),
+                        },
+                    ),
+                    span: md::LineSpan { start: 0, end: 0 },
+                },
+            ],
+        ),
+        references: HashMap::new(),
+    };
+    testing::assert_err(md::render_gfm(invalid, md::RenderOptions::standard()));
+}
+
+#[test]
+fn table_delimiters_follow_block_precedence_and_backslash_pipe_rules() -> () {
+    testing::assert_eq(gfm("a | b\n- | -\n"), "<p>a | b</p>\n<ul>\n<li>| -</li>\n</ul>\n");
+    testing::assert_eq(
+        gfm("a\\\\|b\n| - |\n"),
+        "<table>\n<thead>\n<tr>\n<th>a|b</th>\n</tr>\n</thead>\n</table>\n",
+    );
+    testing::assert_eq(
+        gfm("| `a\\\\|b` |\n| - |\n"),
+        "<table>\n<thead>\n<tr>\n<th><code>a\\|b</code></th>\n</tr>\n</thead>\n</table>\n",
+    );
+    testing::assert_eq(gfm("a\\\\|b\n| :-: | -: |\n"), "<p>a\\|b\n| :-: | -: |</p>\n");
+}

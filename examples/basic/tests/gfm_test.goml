@@ -1,0 +1,68 @@
+package tests;
+
+use ecosystem::markdown as md;
+use ecosystem::verification::reference;
+use std::json;
+use std::testing;
+
+#[test]
+fn gfm_consumer_reads_table_and_task_metadata() -> () {
+    let doc = testing::expect_ok(
+        md::parse_gfm("Package | Status\n:- | -:\nuuid | ready\n\n- [x] build\n- [ ] publish\n"),
+        "consumer document",
+    );
+    if let md::GfmBlockKind::Table(table) = doc.blocks[0].kind {
+        testing::assert(table.alignments[1] == md::Alignment::Right);
+        testing::assert_eq(
+            testing::expect_ok(md::inline_text(table.rows[0][0]), "package name"),
+            "uuid",
+        );
+    } else {
+        testing::assert(false);
+    }
+    if let md::GfmBlockKind::List(_, _, _, items) = doc.blocks[1].kind {
+        testing::assert(items[0].checked == Option::Some(true));
+        testing::assert(items[1].checked == Option::Some(false));
+    } else {
+        testing::assert(false);
+    }
+    let html = testing::expect_ok(
+        md::render_gfm(doc, md::RenderOptions::standard()),
+        "consumer HTML",
+    );
+    testing::assert(html.contains("<td align=\"left\">uuid</td>"));
+    testing::assert(html.contains("<input checked=\"\" disabled=\"\" type=\"checkbox\" /> build"));
+}
+
+#[test]
+fn disabled_extensions_preserve_entire_commonmark_and_entity_corpus() -> () {
+    let fixture = reference::load();
+    let inputs = testing::expect_some(
+        json::as_array(reference::field(fixture, "input")),
+        "input cases",
+    );
+    let expected = testing::expect_some(
+        json::as_array(reference::field(fixture, "expected")),
+        "expected cases",
+    );
+    testing::assert_eq(inputs.len(), expected.len());
+    for index in 0..inputs.len() {
+        let source = testing::expect_some(json::as_string(inputs[index]), "source");
+        let doc = testing::expect_ok(
+            md::parse_gfm_with_options(
+                source,
+                md::ParseOptions::standard(),
+                md::GfmOptions::disabled(),
+            ),
+            "disabled extensions",
+        );
+        let actual = testing::expect_ok(
+            md::render_gfm(doc, md::RenderOptions::commonmark()),
+            "compatible rendering",
+        );
+        testing::assert_eq(
+            actual,
+            testing::expect_some(json::as_string(expected[index]), "expected HTML"),
+        );
+    }
+}
