@@ -328,6 +328,7 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
             let inner: Vec[Line] = Vec::new();
             let mut lazy = false;
             let mut active_fence: Option[Fence] = Option::None;
+            let mut active_table = false;
             while index < lines.len() {
                 let current = lines[index];
                 if let Some(content) = if active_fence.is_some() {
@@ -348,9 +349,20 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                             || (lazy && !blank(content) && !interrupts(content)
                                 && setext(content).is_none());
                     }
+                    active_table = table_continuation(
+                        context,
+                        active_table,
+                        inner,
+                        Line { text: content, number: current.number, lazy: current.lazy },
+                        active_fence.is_none(),
+                    )?;
+                    if active_table {
+                        lazy = false;
+                    }
                     inner.push(Line { text: content, number: current.number, lazy: current.lazy });
                     index += 1;
-                } else if lazy && !blank(current.text) && !interrupts(current.text) {
+                } else if lazy && !blank(current.text) && !interrupts(current.text)
+                    && html_block_start(current.text, false).is_none() {
                     inner.push(Line { text: current.text, number: current.number, lazy: true });
                     index += 1;
                 } else {
@@ -392,12 +404,14 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                 let mut lazy = lazy_text(marker.content);
                 let mut previous_blank = blank(marker.content);
                 let mut active_fence = fence_start(marker.content);
+                let mut active_table = false;
                 while index < lines.len() {
                     let current = lines[index];
                     if blank(current.text) {
                         inner.push(current);
                         previous_blank = true;
                         lazy = false;
+                        active_table = false;
                         index += 1;
                         if inner.len() == 2 && blank(marker.content) {
                             break;
@@ -410,6 +424,13 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                         } else {
                             strip_container(current.text, marker.padding)
                         };
+                        active_table = table_continuation(
+                            context,
+                            active_table,
+                            inner,
+                            Line { text: content, number: current.number, lazy: current.lazy },
+                            active_fence.is_none(),
+                        )?;
                         inner.push(
                             Line { text: content, number: current.number, lazy: current.lazy },
                         );
@@ -426,13 +447,17 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                             lazy = lazy_text(content)
                                 || (lazy && !blank(content) && !interrupts(content));
                         }
+                        if active_table {
+                            lazy = false;
+                        }
                         index += 1;
                         continue;
                     }
                     if list_marker(current.text, false).is_some() {
                         break;
                     }
-                    if lazy && !previous_blank && !interrupts(current.text) {
+                    if lazy && !previous_blank && !interrupts(current.text)
+                        && html_block_start(current.text, false).is_none() {
                         inner.push(Line { text: current.text, number: current.number, lazy: true });
                         index += 1;
                         continue;
@@ -490,11 +515,46 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
             );
             continue;
         }
+        if context.extensions.tables && index + 1 < lines.len() && !lines[index + 1].lazy {
+            if let Some((alignments, header)) = table_header(context, line, lines[index + 1])? {
+                let rows: Vec[Vec[string]] = Vec::new();
+                index += 2;
+                while index < lines.len() && !table_ends(lines[index].text) && !lines[index].lazy {
+                    let cells = table_cells(context, lines[index].text, lines[index].number)?;
+                    let row: Vec[string] = Vec::new();
+                    for column in 0..header.len() {
+                        context.node(lines[index].number)?;
+                        row.push(
+                            if column < cells.len() {
+                                cells[column]
+                            } else {
+                                ""
+                            },
+                        );
+                    }
+                    rows.push(row);
+                    index += 1;
+                }
+                blocks.push(
+                    RawBlock {
+                        kind: RawKind::Table(alignments, header, rows),
+                        span: LineSpan { start: line.number, end: lines[index - 1].number },
+                    },
+                );
+                continue;
+            }
+        }
         let content = text::StringBuilder::new();
         content.write_string(strip_indent(line.text, indent(line.text).0));
         index += 1;
         let mut heading: Option[isize] = Option::None;
         while index < lines.len() && !blank(lines[index].text) {
+            if context.extensions.tables && index + 1 < lines.len() && !lines[index].lazy
+                && !lines[index + 1].lazy
+                && !interrupts(lines[index].text)
+                && table_header(context, lines[index], lines[index + 1])?.is_some() {
+                break;
+            }
             if let Some(level) = if lines[index].lazy {
                 Option::None
             } else {
@@ -549,7 +609,15 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                 RawBlock {
                     kind: match heading {
                         Some(level) => RawKind::Heading(level, parsed),
-                        None => RawKind::Paragraph(parsed),
+                        None => if context.extensions.task_lists {
+                            if let Some((checked, content)) = task_marker(remaining) {
+                                RawKind::TaskParagraph(parsed, checked, content.trim())
+                            } else {
+                                RawKind::Paragraph(parsed)
+                            }
+                        } else {
+                            RawKind::Paragraph(parsed)
+                        },
                     },
                     span: LineSpan { start: line.number + removed, end: lines[index - 1].number },
                 },
@@ -568,7 +636,10 @@ fn finalize(context: Context, raw: Vec[RawBlock]) -> Result[Vec[Block], Error] {
     for block in raw {
         let kind = match block.kind {
             RawKind::Definition => continue,
-            RawKind::Paragraph(value) => BlockKind::Paragraph(
+            RawKind::Table(_, _, _) => return Result::Err(
+                Error { line: block.span.start, message: "table requires GFM finalization" },
+            ),
+            RawKind::Paragraph(value) | RawKind::TaskParagraph(value, _, _) => BlockKind::Paragraph(
                 parse_inlines(context, value, block.span.start)?,
             ),
             RawKind::Heading(level, value) => BlockKind::Heading(
@@ -592,7 +663,10 @@ fn finalize(context: Context, raw: Vec[RawBlock]) -> Result[Vec[Block], Error] {
     Result::Ok(blocks)
 }
 
-pub fn parse_with_options(source: string, options: ParseOptions) -> Result[Document, Error] {
+fn parse_raw(source: string, options: ParseOptions, extensions: GfmOptions) -> Result[
+    (Context, Vec[RawBlock]),
+    Error,
+] {
     if options.max_bytes < 0 || source.byte_len() > options.max_bytes || options.max_depth < 1
         || options.max_nodes < 0
         || options.max_work < 0 {
@@ -614,11 +688,17 @@ pub fn parse_with_options(source: string, options: ParseOptions) -> Result[Docum
     }
     let context = Context {
         options,
+        extensions,
         references: HashMap::new(),
         nodes: Ref::new(0),
         work: Ref::new(0),
     };
     let raw = parse_blocks(context, lines, 0)?;
+    Result::Ok((context, raw))
+}
+
+pub fn parse_with_options(source: string, options: ParseOptions) -> Result[Document, Error] {
+    let (context, raw) = parse_raw(source, options, GfmOptions::disabled())?;
     Result::Ok(Document { blocks: finalize(context, raw)?, references: context.references })
 }
 

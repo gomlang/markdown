@@ -103,6 +103,7 @@ impl RenderOptions {
 
 struct Context {
     options: ParseOptions,
+    extensions: GfmOptions,
     references: HashMap[string, Reference],
     nodes: Ref[isize],
     work: Ref[isize],
@@ -138,7 +139,9 @@ struct Line {
 
 enum RawKind {
     Definition,
+    Table(Vec[Alignment], Vec[string], Vec[Vec[string]]),
     Paragraph(string),
+    TaskParagraph(string, bool, string),
     Heading(isize, string),
     Code(string, string),
     Html(string),

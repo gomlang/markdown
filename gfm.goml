@@ -1,0 +1,452 @@
+package markdown;
+
+use std::text;
+
+#[derive(Debug, PartialEq)]
+pub enum Alignment {
+    Default,
+    Left,
+    Center,
+    Right,
+}
+
+pub struct GfmOptions {
+    pub tables: bool,
+    pub task_lists: bool,
+}
+
+impl GfmOptions {
+    pub fn standard() -> GfmOptions {
+        GfmOptions { tables: true, task_lists: true }
+    }
+
+    pub fn disabled() -> GfmOptions {
+        GfmOptions { tables: false, task_lists: false }
+    }
+}
+
+pub struct Table {
+    pub alignments: Vec[Alignment],
+    pub header: Vec[Vec[Inline]],
+    pub rows: Vec[Vec[Vec[Inline]]],
+}
+
+pub struct GfmListItem {
+    pub checked: Option[bool],
+    pub blocks: Vec[GfmBlock],
+}
+
+pub enum GfmBlockKind {
+    CommonMark(BlockKind),
+    Quote(Vec[GfmBlock]),
+    List(bool, isize, bool, Vec[GfmListItem]),
+    Table(Table),
+}
+
+pub struct GfmBlock {
+    pub kind: GfmBlockKind,
+    pub span: LineSpan,
+}
+
+pub struct GfmDocument {
+    pub blocks: Vec[GfmBlock],
+    pub references: HashMap[string, Reference],
+}
+
+fn table_cells(context: Context, value: string, line: isize) -> Result[Vec[string], Error] {
+    context.spend(value.byte_len(), line)?;
+    let value = trim_spaces(value);
+    let cells: Vec[string] = Vec::new();
+    if value == "|" {
+        return Result::Ok(cells);
+    }
+    let mut cell = text::StringBuilder::new();
+    let mut index = if value.starts_with("|") {
+        1
+    } else {
+        0
+    };
+    let mut trailing = false;
+    while index < value.byte_len() {
+        let byte = value.byte_get(index);
+        if byte == 92 && index + 1 < value.byte_len() {
+            if value.byte_get(index + 1) == 124 {
+                cell.write_string("|");
+                index += 2;
+            } else {
+                cell.write_string("\\");
+                index += 1;
+            }
+            trailing = false;
+        } else if byte == 124 {
+            context.node(line)?;
+            cells.push(trim_spaces(cell.finish()));
+            cell = text::StringBuilder::new();
+            trailing = true;
+            index += 1;
+        } else {
+            let start = index;
+            while index < value.byte_len() && value.byte_get(index) != 92
+                && value.byte_get(index) != 124 {
+                index += 1;
+            }
+            if index == start {
+                index += 1;
+            }
+            cell.write_string(value.byte_slice(start, index));
+            trailing = false;
+        }
+    }
+    if !trailing {
+        context.node(line)?;
+        cells.push(trim_spaces(cell.finish()));
+    }
+    Result::Ok(cells)
+}
+
+fn table_header(context: Context, header: Line, delimiter: Line) -> Result[
+    Option[(Vec[Alignment], Vec[string])],
+    Error,
+] {
+    if indent(delimiter.text).0 >= 4 || setext(delimiter.text).is_some()
+        || interrupts(delimiter.text) {
+        return Result::Ok(Option::None)
+    }
+    context.spend(delimiter.text.byte_len(), delimiter.number)?;
+    for byte in delimiter.text.to_bytes() {
+        if byte != 32 && byte != 9 && byte != 45 && byte != 58 && byte != 124 {
+            return Result::Ok(Option::None)
+        }
+    }
+    let delimiters = table_cells(context, delimiter.text, delimiter.number)?;
+    let alignments: Vec[Alignment] = Vec::new();
+    for value in delimiters {
+        let left = value.starts_with(":");
+        let right = value.ends_with(":");
+        let start = if left {
+            1
+        } else {
+            0
+        };
+        let end = value.byte_len()
+            - if right {
+                1
+            } else {
+                0
+            };
+        if end <= start {
+            return Result::Ok(Option::None)
+        }
+        for byte in value.byte_slice(start, end).to_bytes() {
+            if byte != 45 {
+                return Result::Ok(Option::None)
+            }
+        }
+        alignments.push(
+            if left && right {
+                Alignment::Center
+            } else if left {
+                Alignment::Left
+            } else if right {
+                Alignment::Right
+            } else {
+                Alignment::Default
+            },
+        );
+    }
+    let cells = table_cells(context, header.text, header.number)?;
+    if cells.is_empty() || cells.len() != alignments.len() {
+        return Result::Ok(Option::None)
+    }
+    Result::Ok(Option::Some((alignments, cells)))
+}
+
+fn task_whitespace(byte: u8) -> bool {
+    byte == 32 || byte == 9 || byte == 10 || byte == 11 || byte == 12 || byte == 13
+}
+
+fn task_marker(value: string) -> Option[(bool, string)] {
+    if value.byte_len() < 4 || value.byte_get(0) != 91 || value.byte_get(2) != 93
+        || !task_whitespace(value.byte_get(3)) {
+        return Option::None
+    }
+    let marker = value.byte_get(1);
+    if marker != 120 && marker != 88 && !task_whitespace(marker) {
+        return Option::None
+    }
+    let mut start = 3;
+    while start < value.byte_len() && task_whitespace(value.byte_get(start)) {
+        start += 1;
+    }
+    Option::Some((marker == 120 || marker == 88, value.byte_slice(start, value.byte_len())))
+}
+
+fn finalize_cells(context: Context, cells: Vec[string], line: isize) -> Result[
+    Vec[Vec[Inline]],
+    Error,
+] {
+    let parsed: Vec[Vec[Inline]] = Vec::new();
+    for cell in cells {
+        parsed.push(parse_inlines(context, cell, line)?);
+    }
+    Result::Ok(parsed)
+}
+
+fn finalize_gfm(context: Context, raw: Vec[RawBlock]) -> Result[Vec[GfmBlock], Error] {
+    let blocks: Vec[GfmBlock] = Vec::new();
+    for block in raw {
+        let kind = match block.kind {
+            RawKind::Definition => continue,
+            RawKind::Quote(children) => GfmBlockKind::Quote(finalize_gfm(context, children)?),
+            RawKind::List(ordered, start, tight, items) => {
+                let converted: Vec[GfmListItem] = Vec::new();
+                for item in items {
+                    let prepared: Vec[RawBlock] = Vec::new();
+                    let mut checked = Option::None;
+                    for child in item {
+                        if is_definition(child.kind) {
+                            continue;
+                        }
+                        let mut child = child;
+                        if prepared.is_empty() && context.extensions.task_lists {
+                            if let RawKind::TaskParagraph(_, state, remaining) = child.kind {
+                                checked = Option::Some(state);
+                                child = RawBlock {
+                                    kind: RawKind::Paragraph(remaining),
+                                    span: child.span,
+                                };
+                            }
+                        }
+                        prepared.push(child);
+                    }
+                    converted.push(
+                        GfmListItem { checked, blocks: finalize_gfm(context, prepared)? },
+                    );
+                }
+                GfmBlockKind::List(ordered, start, tight, converted)
+            },
+            RawKind::Table(alignments, header, rows) => {
+                let body: Vec[Vec[Vec[Inline]]] = Vec::new();
+                for index in 0..rows.len() {
+                    body.push(finalize_cells(context, rows[index], block.span.start + index + 2)?);
+                }
+                GfmBlockKind::Table(
+                    Table {
+                        alignments,
+                        header: finalize_cells(context, header, block.span.start)?,
+                        rows: body,
+                    },
+                )
+            },
+            _ => {
+                let standard = finalize(context, Vec::from_array([block]))?;
+                GfmBlockKind::CommonMark(standard[0].kind)
+            },
+        };
+        blocks.push(GfmBlock { kind, span: block.span });
+    }
+    Result::Ok(blocks)
+}
+
+pub fn parse_gfm_with_options(source: string, options: ParseOptions, extensions: GfmOptions) -> Result[
+    GfmDocument,
+    Error,
+] {
+    let (context, raw) = parse_raw(source, options, extensions)?;
+    Result::Ok(GfmDocument { blocks: finalize_gfm(context, raw)?, references: context.references })
+}
+
+pub fn parse_gfm(source: string) -> Result[GfmDocument, Error] {
+    parse_gfm_with_options(source, ParseOptions::standard(), GfmOptions::standard())
+}
+
+impl Renderer {
+    fn table_row(
+        self: Renderer,
+        row: Vec[Vec[Inline]],
+        alignments: Vec[Alignment],
+        tag: string,
+        depth: isize,
+    ) -> Result[(), Error] {
+        if row.len() != alignments.len() {
+            return Result::Err(Error { line: 0, message: "table column count mismatch" })
+        }
+        self.write("<tr>\n")?;
+        for index in 0..row.len() {
+            self.write("<" + tag)?;
+            let alignment = match alignments[index] {
+                Alignment::Default => "",
+                Alignment::Left => "left",
+                Alignment::Center => "center",
+                Alignment::Right => "right",
+            };
+            if alignment != "" {
+                self.write(" align=\"" + alignment + "\"")?;
+            }
+            self.write(">")?;
+            self.inlines(row[index], depth + 1, false)?;
+            self.write("</" + tag + ">\n")?;
+        }
+        self.write("</tr>\n")
+    }
+
+    fn gfm_blocks(
+        self: Renderer,
+        blocks: Vec[GfmBlock],
+        depth: isize,
+        tight: bool,
+        task: Option[bool],
+    ) -> Result[(), Error] {
+        self.depth(depth)?;
+        for index in 0..blocks.len() {
+            let block = blocks[index];
+            match block.kind {
+                GfmBlockKind::CommonMark(BlockKind::Paragraph(children)) => {
+                    if !tight {
+                        self.write("<p>")?;
+                    }
+                    if index == 0 {
+                        if let Some(checked) = task {
+                            self.write(
+                                if checked {
+                                    "<input checked=\"\" disabled=\"\" type=\"checkbox\""
+                                } else {
+                                    "<input disabled=\"\" type=\"checkbox\""
+                                },
+                            )?;
+                            self.write(
+                                if self.options.xhtml {
+                                    " /> "
+                                } else {
+                                    "> "
+                                },
+                            )?;
+                        }
+                    }
+                    self.inlines(children, depth + 1, false)?;
+                    if !tight {
+                        self.write("</p>\n")?;
+                    } else if index + 1 < blocks.len() {
+                        self.write("\n")?;
+                    }
+                },
+                GfmBlockKind::CommonMark(kind) => self.blocks(
+                    Vec::from_array([Block { kind, span: block.span }]),
+                    depth,
+                    tight,
+                )?,
+                GfmBlockKind::Quote(children) => {
+                    self.write("<blockquote>\n")?;
+                    self.gfm_blocks(children, depth + 1, false, Option::None)?;
+                    self.write("</blockquote>\n")?;
+                },
+                GfmBlockKind::List(ordered, start, compact, items) => {
+                    let tag = if ordered {
+                        "ol"
+                    } else {
+                        "ul"
+                    };
+                    self.write("<" + tag)?;
+                    if ordered && start != 1 {
+                        self.write(f" start=\"{start}\"")?;
+                    }
+                    self.write(">\n")?;
+                    for item in items {
+                        if item.checked.is_some()
+                            && (item.blocks.is_empty() || !is_gfm_paragraph(item.blocks[0].kind)) {
+                            return Result::Err(
+                                Error {
+                                    line: block.span.start,
+                                    message: "task item must start with a paragraph",
+                                },
+                            )
+                        }
+                        self.write("<li>")?;
+                        if !item.blocks.is_empty() {
+                            let inline_first = is_gfm_paragraph(item.blocks[0].kind) && compact;
+                            if !inline_first {
+                                self.write("\n")?;
+                            }
+                            self.gfm_blocks(item.blocks, depth + 1, compact, item.checked)?;
+                        }
+                        self.write("</li>\n")?;
+                    }
+                    self.write("</" + tag + ">\n")?;
+                },
+                GfmBlockKind::Table(table) => {
+                    if table.header.is_empty() {
+                        return Result::Err(
+                            Error {
+                                line: block.span.start,
+                                message: "table must have at least one column",
+                            },
+                        );
+                    }
+                    self.write("<table>\n<thead>\n")?;
+                    self.table_row(table.header, table.alignments, "th", depth + 1)?;
+                    self.write("</thead>\n")?;
+                    if !table.rows.is_empty() {
+                        self.write("<tbody>\n")?;
+                        for row in table.rows {
+                            self.table_row(row, table.alignments, "td", depth + 1)?;
+                        }
+                        self.write("</tbody>\n")?;
+                    }
+                    self.write("</table>\n")?;
+                },
+            }
+        }
+        Result::Ok(())
+    }
+}
+
+pub fn render_gfm(document: GfmDocument, options: RenderOptions) -> Result[string, Error] {
+    if options.max_depth < 0 || options.max_bytes < 0 {
+        return Result::Err(Error { line: 0, message: "invalid render limits" })
+    }
+    let renderer = Renderer { options, output: text::StringBuilder::new() };
+    renderer.gfm_blocks(document.blocks, 0, false, Option::None)?;
+    Result::Ok(renderer.output.finish())
+}
+
+pub fn to_html_gfm(source: string) -> Result[string, Error] {
+    render_gfm(parse_gfm(source)?, RenderOptions::standard())
+}
+
+fn is_definition(kind: RawKind) -> bool {
+    match kind {
+        RawKind::Definition => true,
+        _ => false,
+    }
+}
+
+fn is_gfm_paragraph(kind: GfmBlockKind) -> bool {
+    match kind {
+        GfmBlockKind::CommonMark(BlockKind::Paragraph(_)) => true,
+        _ => false,
+    }
+}
+
+fn table_continuation(
+    context: Context,
+    active: bool,
+    previous: Vec[Line],
+    current: Line,
+    enabled: bool,
+) -> Result[bool, Error] {
+    if !context.extensions.tables || !enabled || table_ends(current.text) {
+        return Result::Ok(false)
+    }
+    if active {
+        return Result::Ok(true);
+    }
+    if previous.is_empty() || previous[previous.len() - 1].lazy || current.lazy {
+        return Result::Ok(false)
+    }
+    Result::Ok(table_header(context, previous[previous.len() - 1], current)?.is_some())
+}
+
+fn table_ends(value: string) -> bool {
+    blank(value) || interrupts(value) || indent(value).0 >= 4 || list_marker(value, false).is_some()
+        || html_block_start(value, false).is_some()
+}

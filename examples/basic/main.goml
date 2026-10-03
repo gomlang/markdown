@@ -25,6 +25,21 @@ fn run() -> Result[(), string] {
             );
         }
         print(json::encode(json::Value::Array(results)));
+    } else if args.len() > 1 && (args[1] == "--gfm" || args[1] == "--gfm-commonmark") {
+        let document = markdown::parse_gfm(input).map_err(|problem| problem.to_string())?;
+        print(
+            markdown::render_gfm(
+                document,
+                if args[1] == "--gfm-commonmark" {
+                    markdown::RenderOptions {
+                        xhtml: false,
+                        ..markdown::RenderOptions::commonmark(),
+                    }
+                } else {
+                    markdown::RenderOptions::standard()
+                },
+            ).map_err(|problem| problem.to_string())?,
+        );
     } else {
         let document = markdown::parse(input).map_err(|problem| problem.to_string())?;
         print(

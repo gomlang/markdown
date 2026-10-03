@@ -1,10 +1,14 @@
 # ecosystem::markdown
 
-A CommonMark parser, public AST and configurable HTML renderer implemented in
-GoML. The current implementation passes all **652 CommonMark 0.31.2 examples**
+A CommonMark parser with opt-in GFM tables and task lists, public ASTs and a
+configurable HTML renderer implemented in GoML. The current implementation passes all **652 CommonMark 0.31.2 examples**
 with exact HTML comparison. Parsing, rendering and Unicode punctuation/symbol
 classification are implemented in GoML, alongside `std::unicode` whitespace and
-case folding. This module has no direct Go FFI bindings or native dependencies.
+case folding. This module has no direct Go FFI bindings. Its `ecosystem::html`
+dependency also packages a native DOM adapter, so a consuming module needs a
+`go.mod` with Go 1.26.0 even when it only imports Markdown. The root `go.mod`
+provides this for this library and its example; GoML resolves the dependency's
+pinned Go packages during builds.
 
 ```goml
 use ecosystem::markdown;
@@ -34,8 +38,9 @@ literal interior tabs; tabs used for container structure obey four-column stops.
 Link/image destinations are percent-encoded during rendering, while existing
 percent escapes are preserved.
 
-This module implements CommonMark, without GFM tables, task lists, strikethrough,
-footnotes, math or syntax highlighting. Passing the complete reference corpus is
+The default API implements CommonMark. Separate GFM APIs enable tables and task
+lists; strikethrough, extended autolinks, footnotes, math and syntax highlighting
+remain outside the implemented extension set. Passing the complete reference corpus is
 evidence of the tested behavior, not proof that every possible input matches
 every other Markdown implementation.
 
@@ -75,6 +80,66 @@ Callbacks must not mutate the tree during traversal.
 AST vectors and maps have normal GoML shared-storage semantics. Returning an AST
 does not make its container storage immutable, and the module does not provide
 concurrent mutation support.
+
+## GFM tables and task lists
+
+`parse_gfm(source)` enables both extensions. `parse_gfm_with_options(source,
+parse_options, gfm_options)` accepts the existing resource limits and independent
+`GfmOptions { tables, task_lists }` switches. `GfmOptions::disabled()` preserves
+CommonMark parsing. `to_html_gfm(source)` uses the same safe rendering defaults as
+`to_html`; `render_gfm(document, render_options)` selects rendering policy.
+
+```goml
+use ecosystem::markdown;
+
+fn render_status() -> Result[string, markdown::Error] {
+    markdown::to_html_gfm(
+        "Package | Status\n:- | -:\nuuid | ready\n\n- [x] build\n- [ ] publish\n",
+    )
+}
+```
+
+The new `GfmDocument` has `blocks` and `references`. Each `GfmBlock` keeps its
+inclusive line span and a `GfmBlockKind`: `CommonMark(BlockKind)` for ordinary
+leaves, `Quote`, `List` or `Table`. Lists retain ordering, start and tightness;
+each `GfmListItem` exposes `blocks` and `checked: Option[bool]`. `None` denotes an
+ordinary item, `Some(false)` an unchecked task and `Some(true)` a checked task.
+The task marker is removed from the first paragraph's inline text. Other
+paragraphs and escaped markers remain ordinary text.
+
+`Table` exposes `alignments`, `header` and `rows`. A cell is `Vec[Inline]`;
+`Alignment` is `Default`, `Left`, `Center` or `Right`. Header and delimiter widths
+must match. Short body rows are padded with empty cells and extra cells are
+discarded. Leading/trailing pipes are optional; escaped pipes remain cell text,
+including within code spans. Unescaped pipes divide cells even inside code
+spans, following GFM's block-before-inline parsing. Blank lines and other block
+structures end tables. Nested lists and quotes preserve these extensions.
+
+The existing `Document`, `BlockKind`, `ParseOptions` and visitor signatures are
+unchanged. Applications opt into the separate GFM tree and traverse its public
+containers; `inline_text` remains available for its cells and paragraph leaves.
+Constructed table ASTs must have at least one column and matching widths for
+alignments, header and every row. Task items must start with a paragraph.
+Malformed constructed trees return rendering errors, and cyclic trees remain
+bounded by the rendering depth limit.
+
+Table cells, including cells inserted into short rows, consume the parse-node
+budget. Row scans consume the work budget. HTML text, URL filtering, output and
+depth limits also apply to all GFM content. Checkboxes are always disabled; the
+renderer follows `xhtml` for their void-element spelling. It adds no JavaScript
+or interactive state management.
+
+The tests retain all ten independently expected examples from the official
+[GFM tables](https://github.github.com/gfm/#tables-extension-) and
+[task list items](https://github.github.com/gfm/#task-list-items-extension-)
+sections. Those specification examples are licensed under
+[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), based on John
+MacFarlane's CommonMark specification and GitHub's extensions. Additional tests
+cover parser options, AST metadata, nesting, escaping, block precedence,
+reference links, invalid task markers, resource limits and malformed ASTs.
+The downstream consumer repeats the 652 CommonMark and 2,125 entity cases with
+extensions disabled, alongside the existing standard API corpus test. This is
+tested extension coverage, not a claim of complete GFM support.
 
 ## Rendering
 
@@ -139,7 +204,9 @@ Library tests cover AST construction/inspection, spans, captured visitors,
 Unicode/reference normalization, nested lists, literal tabs, escaping, URI
 policy, render options and resource/cycle errors. The example
 imports only public APIs and also offers stdin conversion through `--safe`,
-`--commonmark` and a JSON-array batch interface through `--json`.
+`--commonmark` and a JSON-array batch interface through `--json`. `--gfm` enables
+safe table/task rendering; `--gfm-commonmark` enables the same extensions with
+raw-HTML/URI compatibility policy and HTML void-element spelling.
 
 The example’s native `tests/reference_test.goml` checks all 652 examples from the [CommonMark 0.31.2 reference corpus](https://spec.commonmark.org/0.31.2/spec.json), together with all 2,125 named entities. The checked-in independent corpus records the original CommonMark SHA-256 digest `d431b29d97b6f73e69d547109cf5081578fac931e72afe95639ebe766c1b2a20`; running the tests needs no Python or network access. The CommonMark specification and examples are by John MacFarlane, licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 
