@@ -10,3 +10,14 @@ fn downstream_nested_fences_end_before_outer_paragraphs() -> () {
         "<blockquote>\n<ul>\n<li>\n<pre><code>body\n</code></pre>\n</li>\n</ul>\n</blockquote>\n<p>outside</p>\n",
     );
 }
+
+#[test]
+fn downstream_sibling_fences_use_the_paragraph_container() -> () {
+    testing::assert_eq(
+        testing::expect_ok(
+            markdown::to_html("- > a\n  lazy\n  2. ```\n     body\noutside\n"),
+            "sibling fence",
+        ),
+        "<ul>\n<li>\n<blockquote>\n<p>a\nlazy</p>\n</blockquote>\n<ol start=\"2\">\n<li>\n<pre><code>body\n</code></pre>\n</li>\n</ol>\n</li>\n</ul>\n<p>outside</p>\n",
+    );
+}

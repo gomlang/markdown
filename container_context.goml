@@ -1,0 +1,129 @@
+package markdown;
+
+enum ContainerPrefix {
+    Quote,
+    Item(isize),
+}
+
+enum NestedLiteralKind {
+    Code(Fence),
+    Html(isize, string),
+}
+
+struct NestedLiteral {
+    prefixes: Vec[ContainerPrefix],
+    kind: NestedLiteralKind,
+}
+
+fn nested_line_context(value: string, previous: Option[Vec[ContainerPrefix]], max_depth: isize) -> (
+    Option[NestedLiteral],
+    Option[Vec[ContainerPrefix]],
+) {
+    let prefixes: Vec[ContainerPrefix] = Vec::new();
+    let mut content = value;
+    let mut previous = previous;
+    loop {
+        if let Some(path) = previous {
+            if prefixes.len() < path.len() {
+                let prefix = path[prefixes.len()];
+                let continued = match prefix {
+                    ContainerPrefix::Quote => quote_content(content),
+                    ContainerPrefix::Item(padding) => if !blank(content)
+                        && indent(content).0 >= padding {
+                        Option::Some(strip_container(content, padding))
+                    } else {
+                        Option::None
+                    },
+                };
+                if let Some(inner) = continued {
+                    prefixes.push(prefix);
+                    content = inner;
+                    continue;
+                }
+                if !blank(content) && !interrupts(content) && list_marker(content, false).is_none()
+                    && html_block_start(content, false).is_none()
+                    && setext(content).is_none() {
+                    return (Option::None, previous)
+                }
+                previous = Option::None;
+            }
+        }
+        let paragraph = previous.is_some();
+        if let Some(fence) = fence_start(content) {
+            return (
+                if prefixes.is_empty() {
+                    Option::None
+                } else {
+                    Option::Some(NestedLiteral { prefixes, kind: NestedLiteralKind::Code(fence) })
+                },
+                Option::None,
+            )
+        }
+        if let Some((kind, ending)) = html_block_start(content, paragraph) {
+            return (
+                if prefixes.is_empty() || html_block_end(content, kind, ending) {
+                    Option::None
+                } else {
+                    Option::Some(
+                        NestedLiteral { prefixes, kind: NestedLiteralKind::Html(kind, ending) },
+                    )
+                },
+                Option::None,
+            )
+        }
+        if prefixes.len() >= max_depth {
+            return (Option::None, Option::None)
+        }
+        if let Some(inner) = quote_content(content) {
+            prefixes.push(ContainerPrefix::Quote);
+            content = inner;
+        } else if let Some(marker) = list_marker(content, paragraph) {
+            prefixes.push(ContainerPrefix::Item(marker.padding));
+            content = marker.content;
+        } else {
+            return (
+                Option::None,
+                if !blank(content) && atx(content).is_none() && !thematic(content)
+                    && setext(content).is_none()
+                    && (paragraph || indent(content).0 < 4) {
+                    Option::Some(prefixes)
+                } else {
+                    Option::None
+                },
+            )
+        }
+        previous = Option::None;
+    }
+}
+
+fn continue_nested_literal(literal: NestedLiteral, value: string) -> (bool, Option[NestedLiteral]) {
+    let mut content = value;
+    for prefix in literal.prefixes {
+        match prefix {
+            ContainerPrefix::Quote => {
+                let Some(inner) = quote_content_raw(content) else {
+                    return (false, Option::None)
+                };
+                content = inner;
+            },
+            ContainerPrefix::Item(padding) => {
+                if !blank(content) && indent(content).0 < padding {
+                    return (false, Option::None)
+                }
+                content = strip_indent(content, padding);
+            },
+        }
+    }
+    let ended = match literal.kind {
+        NestedLiteralKind::Code(fence) => fence_end(content, fence),
+        NestedLiteralKind::Html(kind, ending) => html_block_end(content, kind, ending),
+    };
+    (
+        true,
+        if ended {
+            Option::None
+        } else {
+            Option::Some(literal)
+        },
+    )
+}
