@@ -307,12 +307,7 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                 let text = lines[index].text;
                 content.write_line(text);
                 index += 1;
-                if kind < 6
-                    && (if kind == 1 {
-                        text.to_ascii_lowercase().contains(ending)
-                    } else {
-                        text.contains(ending)
-                    }) {
+                if html_block_end(text, kind, ending) {
                     break;
                 }
             }
@@ -328,21 +323,35 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
             let inner: Vec[Line] = Vec::new();
             let mut lazy = false;
             let mut active_fence: Option[Fence] = Option::None;
+            let mut active_html: Option[(isize, string)] = Option::None;
             let mut active_table = false;
             while index < lines.len() {
                 let current = lines[index];
-                if let Some(content) = if active_fence.is_some() {
+                if let Some(content) = if active_fence.is_some() || active_html.is_some() {
                     quote_content_raw(current.text)
                 } else {
                     quote_content(current.text)
                 } {
-                    if let Some(fence) = active_fence {
+                    let mut html_line = false;
+                    if let Some((kind, ending)) = active_html {
+                        if html_block_end(content, kind, ending) {
+                            active_html = Option::None;
+                        }
+                        html_line = true;
+                        lazy = false;
+                    } else if let Some(fence) = active_fence {
                         if fence_end(content, fence) {
                             active_fence = Option::None;
                         }
                         lazy = false;
                     } else if let Some(fence) = fence_start(content) {
                         active_fence = Option::Some(fence);
+                        lazy = false;
+                    } else if let Some((kind, ending)) = html_block_start(content, lazy) {
+                        if !html_block_end(content, kind, ending) {
+                            active_html = Option::Some((kind, ending));
+                        }
+                        html_line = true;
                         lazy = false;
                     } else {
                         lazy = lazy_text(content)
@@ -354,7 +363,7 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                         active_table,
                         inner,
                         Line { text: content, number: current.number, lazy: current.lazy },
-                        active_fence.is_none(),
+                        active_fence.is_none() && !html_line,
                     )?;
                     if active_table {
                         lazy = false;
@@ -405,14 +414,32 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                 let mut lazy = lazy_text(marker.content);
                 let mut previous_blank = blank(marker.content);
                 let mut active_fence = fence_start(marker.content);
+                let mut active_html = html_block_start(marker.content, false);
+                if let Some((kind, ending)) = active_html {
+                    lazy = false;
+                    if html_block_end(marker.content, kind, ending) {
+                        active_html = Option::None;
+                    }
+                }
                 let mut active_table = false;
                 while index < lines.len() {
                     let current = lines[index];
                     if blank(current.text) {
-                        inner.push(current);
+                        inner.push(
+                            if active_html.is_some() {
+                                Line { text: strip_indent(current.text, marker.padding), ..current }
+                            } else {
+                                current
+                            },
+                        );
                         previous_blank = true;
                         lazy = false;
                         active_table = false;
+                        if let Some((kind, ending)) = active_html {
+                            if html_block_end(current.text, kind, ending) {
+                                active_html = Option::None;
+                            }
+                        }
                         index += 1;
                         if inner.len() == 2 && blank(marker.content) {
                             break;
@@ -420,23 +447,20 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                         continue;
                     }
                     if !current.lazy && indent(current.text).0 >= marker.padding {
-                        let content = if active_fence.is_some() {
+                        let content = if active_fence.is_some() || active_html.is_some() {
                             strip_indent(current.text, marker.padding)
                         } else {
                             strip_container(current.text, marker.padding)
                         };
-                        active_table = table_continuation(
-                            context,
-                            active_table,
-                            inner,
-                            Line { text: content, number: current.number, lazy: current.lazy },
-                            active_fence.is_none(),
-                        )?;
-                        inner.push(
-                            Line { text: content, number: current.number, lazy: current.lazy },
-                        );
                         previous_blank = false;
-                        if let Some(fence) = active_fence {
+                        let mut html_line = false;
+                        if let Some((kind, ending)) = active_html {
+                            if html_block_end(content, kind, ending) {
+                                active_html = Option::None;
+                            }
+                            html_line = true;
+                            lazy = false;
+                        } else if let Some(fence) = active_fence {
                             if fence_end(content, fence) {
                                 active_fence = Option::None;
                             }
@@ -444,10 +468,26 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                         } else if let Some(fence) = fence_start(content) {
                             active_fence = Option::Some(fence);
                             lazy = false;
+                        } else if let Some((kind, ending)) = html_block_start(content, lazy) {
+                            if !html_block_end(content, kind, ending) {
+                                active_html = Option::Some((kind, ending));
+                            }
+                            html_line = true;
+                            lazy = false;
                         } else {
                             lazy = lazy_text(content)
                                 || (lazy && !blank(content) && !interrupts(content));
                         }
+                        active_table = table_continuation(
+                            context,
+                            active_table,
+                            inner,
+                            Line { text: content, number: current.number, lazy: current.lazy },
+                            active_fence.is_none() && !html_line,
+                        )?;
+                        inner.push(
+                            Line { text: content, number: current.number, lazy: current.lazy },
+                        );
                         if active_table {
                             lazy = false;
                         }

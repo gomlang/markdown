@@ -1,0 +1,57 @@
+package tests;
+
+use std::testing;
+
+#[test]
+fn html_blocks_do_not_allow_lazy_container_continuations() -> () {
+    for tag in["<script>", "<!--", "<?x", "<!DOCTYPE x", "<![CDATA[", "<div>", "<span>"] {
+        testing::assert_eq(
+            commonmark("> " + tag + "\n> body\noutside\n"),
+            "<blockquote>\n" + tag + "\nbody\n</blockquote>\n<p>outside</p>\n",
+        );
+        testing::assert_eq(
+            commonmark("- " + tag + "\n  body\noutside\n"),
+            "<ul>\n<li>\n" + tag + "\nbody\n</li>\n</ul>\n<p>outside</p>\n",
+        );
+    }
+}
+
+#[test]
+fn html_endings_restore_paragraph_continuations_only_after_a_paragraph() -> () {
+    testing::assert_eq(
+        commonmark("> <script>\n> body\n> </SCRIPT>\noutside\n"),
+        "<blockquote>\n<script>\nbody\n</SCRIPT>\n</blockquote>\n<p>outside</p>\n",
+    );
+    testing::assert_eq(
+        commonmark("> <script>\n> body\n> </script>\n> after\noutside\n"),
+        "<blockquote>\n<script>\nbody\n</script>\n<p>after\noutside</p>\n</blockquote>\n",
+    );
+    testing::assert_eq(
+        commonmark("> <div>\n> body\n>\n> after\noutside\n"),
+        "<blockquote>\n<div>\nbody\n<p>after\noutside</p>\n</blockquote>\n",
+    );
+    testing::assert_eq(
+        commonmark("> paragraph\n> <span>\n> body\noutside\n"),
+        "<blockquote>\n<p>paragraph\n<span>\nbody\noutside</p>\n</blockquote>\n",
+    );
+}
+
+#[test]
+fn html_container_bodies_preserve_tabs_and_ignore_fence_markers() -> () {
+    testing::assert_eq(
+        commonmark("- <script>\n     \n  body\noutside\n"),
+        "<ul>\n<li>\n<script>\n   \nbody\n</li>\n</ul>\n<p>outside</p>\n",
+    );
+    testing::assert_eq(
+        commonmark("> <div>\n> \tinside\noutside\n"),
+        "<blockquote>\n<div>\n\tinside\n</blockquote>\n<p>outside</p>\n",
+    );
+    testing::assert_eq(
+        commonmark("- <div>\n  \tinside\noutside\n"),
+        "<ul>\n<li>\n<div>\n\tinside\n</li>\n</ul>\n<p>outside</p>\n",
+    );
+    testing::assert_eq(
+        commonmark("> <script>\n> ```\n> </script>\n> after\noutside\n"),
+        "<blockquote>\n<script>\n```\n</script>\n<p>after\noutside</p>\n</blockquote>\n",
+    );
+}

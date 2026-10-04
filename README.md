@@ -40,6 +40,9 @@ spans and link titles, including in nested block quotes and lists.
 List markers without a quote prefix end a block quote, including empty list
 items and ordered lists starting at numbers other than one. Explicit quote
 prefixes retain ordinary paragraph-interruption rules within the quote.
+HTML blocks inside quotes and lists require their container prefixes on every
+nonblank line. Their bodies preserve literal tabs and ignore Markdown fence/table
+markers until the HTML block's closing marker or required blank line.
 Link/image destinations are percent-encoded during rendering, while existing
 percent escapes are preserved.
 

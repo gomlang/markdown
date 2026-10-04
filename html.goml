@@ -182,6 +182,16 @@ fn html_block_start(value: string, interrupting: bool) -> Option[(isize, string)
     Option::None
 }
 
+fn html_block_end(value: string, kind: isize, ending: string) -> bool {
+    if kind >= 6 {
+        blank(value)
+    } else if kind == 1 {
+        value.to_ascii_lowercase().contains(ending)
+    } else {
+        value.contains(ending)
+    }
+}
+
 fn autolink(value: string, start: isize) -> Option[(Reference, string, isize)] {
     let end = value.byte_slice(start + 1, value.byte_len()).find(">")? + start + 1;
     let inside = value.byte_slice(start + 1, end);
