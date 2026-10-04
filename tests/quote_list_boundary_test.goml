@@ -1,0 +1,47 @@
+package tests;
+
+use ecosystem::markdown;
+use std::testing;
+
+#[test]
+fn list_markers_without_quote_prefix_end_a_block_quote() -> () {
+    for marker in["0.", "2.", "9)", "123."] {
+        let number = marker.byte_slice(0, marker.byte_len() - 1);
+        for indent in["", " ", "  ", "   "] {
+            testing::assert_eq(
+                commonmark("> a\n" + indent + marker + " b\n"),
+                "<blockquote>\n<p>a</p>\n</blockquote>\n<ol start=\"" + number
+                    + "\">\n<li>b</li>\n</ol>\n",
+            );
+        }
+    }
+    for marker in["-", "+", "*"] {
+        testing::assert_eq(
+            commonmark("> a\n" + marker + "\n"),
+            "<blockquote>\n<p>a</p>\n</blockquote>\n<ul>\n<li></li>\n</ul>\n",
+        );
+    }
+    testing::assert_eq(
+        commonmark("> a\n2.\n"),
+        "<blockquote>\n<p>a</p>\n</blockquote>\n<ol start=\"2\">\n<li></li>\n</ol>\n",
+    );
+    testing::assert_eq(
+        commonmark("> - a\n  2. b\n"),
+        "<blockquote>\n<ul>\n<li>a</li>\n</ul>\n</blockquote>\n<ol start=\"2\">\n<li>b</li>\n</ol>\n",
+    );
+    let document = testing::expect_ok(markdown::parse("> a\n2. b\n"), "block boundary");
+    testing::assert_eq(document.blocks.len(), 2);
+    testing::assert_eq(document.blocks[0].span.end, 0);
+    testing::assert_eq(document.blocks[1].span.start, 1);
+}
+
+#[test]
+fn paragraph_list_interruptions_keep_their_original_context() -> () {
+    testing::assert_eq(commonmark("a\n2. b\n"), "<p>a\n2. b</p>\n");
+    testing::assert_eq(commonmark("> a\n> 2. b\n"), "<blockquote>\n<p>a\n2. b</p>\n</blockquote>\n");
+    testing::assert_eq(commonmark("> a\n> -\n"), "<blockquote>\n<h2>a</h2>\n</blockquote>\n");
+    testing::assert_eq(
+        commonmark("> a\n    2. b\n"),
+        "<blockquote>\n<p>a\n2. b</p>\n</blockquote>\n",
+    );
+}

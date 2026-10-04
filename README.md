@@ -37,6 +37,9 @@ Input line endings are normalized from CRLF and lone CR to LF. Code preserves
 literal interior tabs; tabs used for container structure obey four-column stops.
 Lazy paragraph continuations retain their leading spaces and tabs inside code
 spans and link titles, including in nested block quotes and lists.
+List markers without a quote prefix end a block quote, including empty list
+items and ordered lists starting at numbers other than one. Explicit quote
+prefixes retain ordinary paragraph-interruption rules within the quote.
 Link/image destinations are percent-encoded during rendering, while existing
 percent escapes are preserved.
 

@@ -362,6 +362,7 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                     inner.push(Line { text: content, number: current.number, lazy: current.lazy });
                     index += 1;
                 } else if lazy && !blank(current.text) && !interrupts(current.text)
+                    && list_marker(current.text, false).is_none()
                     && html_block_start(current.text, false).is_none() {
                     inner.push(Line { text: current.text, number: current.number, lazy: true });
                     index += 1;

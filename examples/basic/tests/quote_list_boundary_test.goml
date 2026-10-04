@@ -1,0 +1,16 @@
+package tests;
+
+use ecosystem::markdown;
+use std::testing;
+
+#[test]
+fn downstream_noninitial_list_markers_end_block_quotes() -> () {
+    testing::assert_eq(
+        testing::expect_ok(markdown::to_html("> a\n2. b\n"), "quote followed by list"),
+        "<blockquote>\n<p>a</p>\n</blockquote>\n<ol start=\"2\">\n<li>b</li>\n</ol>\n",
+    );
+    testing::assert_eq(
+        testing::expect_ok(markdown::to_html_gfm("> a\n*\n"), "quote followed by empty item"),
+        "<blockquote>\n<p>a</p>\n</blockquote>\n<ul>\n<li></li>\n</ul>\n",
+    );
+}
