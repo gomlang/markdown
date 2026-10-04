@@ -227,12 +227,12 @@ impl Renderer {
                 },
                 BlockKind::Code(info, literal) => {
                     self.write("<pre><code")?;
-                    let words = info.split(" ");
-                    let language = if words.is_empty() {
-                        ""
-                    } else {
-                        words[0].split("\t")[0]
-                    };
+                    let mut end = 0;
+                    while end < info.byte_len() && info.byte_get(end) != b' '
+                        && info.byte_get(end) != b'\t' {
+                        end += 1;
+                    }
+                    let language = info.byte_slice(0, end);
                     if language != "" {
                         self.write(" class=\"language-")?;
                         self.escaped(language)?;
