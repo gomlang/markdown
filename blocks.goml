@@ -324,16 +324,28 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
             let mut lazy = false;
             let mut active_fence: Option[Fence] = Option::None;
             let mut active_html: Option[(isize, string)] = Option::None;
+            let mut active_nested: Option[NestedLiteral] = Option::None;
             let mut active_table = false;
             while index < lines.len() {
                 let current = lines[index];
-                if let Some(content) = if active_fence.is_some() || active_html.is_some() {
+                if let Some(content) = if active_fence.is_some() || active_html.is_some()
+                    || active_nested.is_some() {
                     quote_content_raw(current.text)
                 } else {
                     quote_content(current.text)
                 } {
+                    let paragraph = lazy;
+                    let was_fenced = active_fence.is_some();
+                    let mut nested_line = false;
+                    if let Some(literal) = active_nested {
+                        let continued = continue_nested_literal(literal, content);
+                        nested_line = continued.0;
+                        active_nested = continued.1;
+                    }
                     let mut html_line = false;
-                    if let Some((kind, ending)) = active_html {
+                    if nested_line {
+                        lazy = false;
+                    } else if let Some((kind, ending)) = active_html {
                         if html_block_end(content, kind, ending) {
                             active_html = Option::None;
                         }
@@ -358,12 +370,23 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                             || (lazy && !blank(content) && !interrupts(content)
                                 && setext(content).is_none());
                     }
+                    if !nested_line && !html_line && !was_fenced && active_fence.is_none() {
+                        active_nested = nested_literal(
+                            content,
+                            paragraph,
+                            context.options.max_depth - depth,
+                        );
+                        if active_nested.is_some() {
+                            lazy = false;
+                        }
+                    }
                     active_table = table_continuation(
                         context,
                         active_table,
                         inner,
                         Line { text: content, number: current.number, lazy: current.lazy },
-                        active_fence.is_none() && !html_line,
+                        active_fence.is_none() && !html_line && !nested_line
+                            && active_nested.is_none(),
                     )?;
                     if active_table {
                         lazy = false;
@@ -414,6 +437,14 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                 let mut lazy = lazy_text(marker.content);
                 let mut previous_blank = blank(marker.content);
                 let mut active_fence = fence_start(marker.content);
+                let mut active_nested = nested_literal(
+                    marker.content,
+                    false,
+                    context.options.max_depth - depth,
+                );
+                if active_nested.is_some() {
+                    lazy = false;
+                }
                 let mut active_html = html_block_start(marker.content, false);
                 if let Some((kind, ending)) = active_html {
                     lazy = false;
@@ -426,7 +457,7 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                     let current = lines[index];
                     if blank(current.text) {
                         inner.push(
-                            if active_html.is_some() {
+                            if active_html.is_some() || active_nested.is_some() {
                                 Line { text: strip_indent(current.text, marker.padding), ..current }
                             } else {
                                 current
@@ -435,6 +466,12 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                         previous_blank = true;
                         lazy = false;
                         active_table = false;
+                        if let Some(literal) = active_nested {
+                            active_nested = continue_nested_literal(
+                                literal,
+                                strip_indent(current.text, marker.padding),
+                            ).1;
+                        }
                         if let Some((kind, ending)) = active_html {
                             if html_block_end(current.text, kind, ending) {
                                 active_html = Option::None;
@@ -447,14 +484,25 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                         continue;
                     }
                     if !current.lazy && indent(current.text).0 >= marker.padding {
-                        let content = if active_fence.is_some() || active_html.is_some() {
+                        let content = if active_fence.is_some() || active_html.is_some()
+                            || active_nested.is_some() {
                             strip_indent(current.text, marker.padding)
                         } else {
                             strip_container(current.text, marker.padding)
                         };
                         previous_blank = false;
+                        let paragraph = lazy;
+                        let was_fenced = active_fence.is_some();
+                        let mut nested_line = false;
+                        if let Some(literal) = active_nested {
+                            let continued = continue_nested_literal(literal, content);
+                            nested_line = continued.0;
+                            active_nested = continued.1;
+                        }
                         let mut html_line = false;
-                        if let Some((kind, ending)) = active_html {
+                        if nested_line {
+                            lazy = false;
+                        } else if let Some((kind, ending)) = active_html {
                             if html_block_end(content, kind, ending) {
                                 active_html = Option::None;
                             }
@@ -478,12 +526,23 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                             lazy = lazy_text(content)
                                 || (lazy && !blank(content) && !interrupts(content));
                         }
+                        if !nested_line && !html_line && !was_fenced && active_fence.is_none() {
+                            active_nested = nested_literal(
+                                content,
+                                paragraph,
+                                context.options.max_depth - depth,
+                            );
+                            if active_nested.is_some() {
+                                lazy = false;
+                            }
+                        }
                         active_table = table_continuation(
                             context,
                             active_table,
                             inner,
                             Line { text: content, number: current.number, lazy: current.lazy },
-                            active_fence.is_none() && !html_line,
+                            active_fence.is_none() && !html_line && !nested_line
+                                && active_nested.is_none(),
                         )?;
                         inner.push(
                             Line { text: content, number: current.number, lazy: current.lazy },

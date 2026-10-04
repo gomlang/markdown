@@ -1,0 +1,57 @@
+package tests;
+
+use ecosystem::markdown;
+use std::testing;
+
+#[test]
+fn nested_literal_blocks_do_not_open_outer_lazy_paragraphs() -> () {
+    testing::assert_eq(
+        commonmark("> - ```\n>   body\noutside\n"),
+        "<blockquote>\n<ul>\n<li>\n<pre><code>body\n</code></pre>\n</li>\n</ul>\n</blockquote>\n<p>outside</p>\n",
+    );
+    testing::assert_eq(
+        commonmark("> > ```\n> > body\noutside\n"),
+        "<blockquote>\n<blockquote>\n<pre><code>body\n</code></pre>\n</blockquote>\n</blockquote>\n<p>outside</p>\n",
+    );
+    testing::assert_eq(
+        commonmark("- > ```\n  > body\noutside\n"),
+        "<ul>\n<li>\n<blockquote>\n<pre><code>body\n</code></pre>\n</blockquote>\n</li>\n</ul>\n<p>outside</p>\n",
+    );
+    testing::assert_eq(
+        commonmark("> > <script>\n> > body\noutside\n"),
+        "<blockquote>\n<blockquote>\n<script>\nbody\n</blockquote>\n</blockquote>\n<p>outside</p>\n",
+    );
+}
+
+#[test]
+fn nested_literal_prefix_changes_and_endings_restore_paragraph_context() -> () {
+    testing::assert_eq(
+        commonmark("> - ```\n>   body\n> parent\noutside\n"),
+        "<blockquote>\n<ul>\n<li>\n<pre><code>body\n</code></pre>\n</li>\n</ul>\n<p>parent\noutside</p>\n</blockquote>\n",
+    );
+    testing::assert_eq(
+        commonmark("> a\n> 2. ```\noutside\n"),
+        "<blockquote>\n<p>a\n2. ```\noutside</p>\n</blockquote>\n",
+    );
+    testing::assert_eq(
+        commonmark("> - ```\n>   > ```\n>   body\noutside\n"),
+        "<blockquote>\n<ul>\n<li>\n<pre><code>&gt; ```\nbody\n</code></pre>\n</li>\n</ul>\n</blockquote>\n<p>outside</p>\n",
+    );
+    testing::assert_eq(
+        commonmark("> - ```\n>   body\n>   ```\n>   after\noutside\n"),
+        "<blockquote>\n<ul>\n<li>\n<pre><code>body\n</code></pre>\nafter\noutside</li>\n</ul>\n</blockquote>\n",
+    );
+    let source = "> - ```\n>   body\noutside\n";
+    testing::assert_ok(
+        markdown::parse_with_options(
+            source,
+            markdown::ParseOptions { max_depth: 2, ..markdown::ParseOptions::standard() },
+        ),
+    );
+    testing::assert_err(
+        markdown::parse_with_options(
+            source,
+            markdown::ParseOptions { max_depth: 1, ..markdown::ParseOptions::standard() },
+        ),
+    );
+}

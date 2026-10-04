@@ -43,6 +43,8 @@ prefixes retain ordinary paragraph-interruption rules within the quote.
 HTML blocks inside quotes and lists require their container prefixes on every
 nonblank line. Their bodies preserve literal tabs and ignore Markdown fence/table
 markers until the HTML block's closing marker or required blank line.
+Nested code fences and HTML blocks retain the required quote and list prefixes
+at each level; their literal content cannot begin a lazy outer paragraph.
 Link/image destinations are percent-encoded during rendering, while existing
 percent escapes are preserved.
 

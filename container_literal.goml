@@ -1,0 +1,85 @@
+package markdown;
+
+enum LiteralPrefix {
+    Quote,
+    Item(isize),
+}
+
+enum NestedLiteralKind {
+    Code(Fence),
+    Html(isize, string),
+}
+
+struct NestedLiteral {
+    prefixes: Vec[LiteralPrefix],
+    kind: NestedLiteralKind,
+}
+
+fn nested_literal(value: string, paragraph: bool, max_depth: isize) -> Option[NestedLiteral] {
+    let prefixes: Vec[LiteralPrefix] = Vec::new();
+    let mut content = value;
+    let mut paragraph = paragraph;
+    loop {
+        if !prefixes.is_empty() {
+            if let Some(fence) = fence_start(content) {
+                return Option::Some(
+                    NestedLiteral { prefixes, kind: NestedLiteralKind::Code(fence) },
+                )
+            }
+            if let Some((kind, ending)) = html_block_start(content, paragraph) {
+                return if html_block_end(content, kind, ending) {
+                    Option::None
+                } else {
+                    Option::Some(
+                        NestedLiteral { prefixes, kind: NestedLiteralKind::Html(kind, ending) },
+                    )
+                }
+            }
+        }
+        if prefixes.len() >= max_depth {
+            return Option::None
+        }
+        if let Some(inner) = quote_content(content) {
+            prefixes.push(LiteralPrefix::Quote);
+            content = inner;
+        } else if let Some(marker) = list_marker(content, paragraph) {
+            prefixes.push(LiteralPrefix::Item(marker.padding));
+            content = marker.content;
+        } else {
+            return Option::None
+        }
+        paragraph = false;
+    }
+}
+
+fn continue_nested_literal(literal: NestedLiteral, value: string) -> (bool, Option[NestedLiteral]) {
+    let mut content = value;
+    for prefix in literal.prefixes {
+        match prefix {
+            LiteralPrefix::Quote => {
+                let Some(inner) = quote_content_raw(content) else {
+                    return (false, Option::None)
+                };
+                content = inner;
+            },
+            LiteralPrefix::Item(padding) => {
+                if !blank(content) && indent(content).0 < padding {
+                    return (false, Option::None)
+                }
+                content = strip_indent(content, padding);
+            },
+        }
+    }
+    let ended = match literal.kind {
+        NestedLiteralKind::Code(fence) => fence_end(content, fence),
+        NestedLiteralKind::Html(kind, ending) => html_block_end(content, kind, ending),
+    };
+    (
+        true,
+        if ended {
+            Option::None
+        } else {
+            Option::Some(literal)
+        },
+    )
+}
