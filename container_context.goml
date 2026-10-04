@@ -41,7 +41,6 @@ fn nested_line_context(value: string, previous: Option[Vec[ContainerPrefix]], ma
                     continue;
                 }
                 if !blank(content) && !interrupts(content) && list_marker(content, false).is_none()
-                    && html_block_start(content, false).is_none()
                     && setext(content).is_none() {
                     return (Option::None, previous)
                 }

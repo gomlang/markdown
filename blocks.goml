@@ -319,7 +319,6 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                 } else {
                     quote_content(current.text)
                 } {
-                    let paragraph = active_paragraph.map(|path| path.is_empty()).unwrap_or(false);
                     let was_fenced = active_fence.is_some();
                     let mut nested_line = false;
                     if let Some(literal) = active_nested {
@@ -344,7 +343,7 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                     } else if let Some(fence) = fence_start(content) {
                         active_fence = Option::Some(fence);
                         lazy = false;
-                    } else if let Some((kind, ending)) = html_block_start(content, paragraph) {
+                    } else if let Some((kind, ending)) = html_block_start(content, lazy) {
                         if !html_block_end(content, kind, ending) {
                             active_html = Option::Some((kind, ending));
                         }
@@ -378,8 +377,7 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                     inner.push(Line { text: content, number: current.number, lazy: current.lazy });
                     index += 1;
                 } else if lazy && !blank(current.text) && !interrupts(current.text)
-                    && list_marker(current.text, false).is_none()
-                    && html_block_start(current.text, false).is_none() {
+                    && list_marker(current.text, false).is_none() {
                     inner.push(Line { text: current.text, number: current.number, lazy: true });
                     index += 1;
                 } else {
@@ -475,9 +473,6 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                             strip_container(current.text, marker.padding)
                         };
                         previous_blank = false;
-                        let paragraph = active_paragraph.map(|path| path.is_empty()).unwrap_or(
-                            false,
-                        );
                         let was_fenced = active_fence.is_some();
                         let mut nested_line = false;
                         if let Some(literal) = active_nested {
@@ -502,7 +497,7 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                         } else if let Some(fence) = fence_start(content) {
                             active_fence = Option::Some(fence);
                             lazy = false;
-                        } else if let Some((kind, ending)) = html_block_start(content, paragraph) {
+                        } else if let Some((kind, ending)) = html_block_start(content, lazy) {
                             if !html_block_end(content, kind, ending) {
                                 active_html = Option::Some((kind, ending));
                             }
@@ -542,8 +537,7 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                     if list_marker(current.text, false).is_some() {
                         break;
                     }
-                    if lazy && !previous_blank && !interrupts(current.text)
-                        && html_block_start(current.text, false).is_none() {
+                    if lazy && !previous_blank && !interrupts(current.text) {
                         inner.push(Line { text: current.text, number: current.number, lazy: true });
                         index += 1;
                         continue;

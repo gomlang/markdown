@@ -25,3 +25,19 @@ fn downstream_html_blocks_keep_following_paragraphs_outside_quotes() -> () {
         "<blockquote>\n<div>\na | b\n- | -\n</blockquote>\n<p>outside</p>\n",
     );
 }
+
+#[test]
+fn downstream_tag_lines_remain_in_lazy_paragraphs() -> () {
+    let document = testing::expect_ok(markdown::parse("> - foo\n<span>\noutside\n"), "parse");
+    testing::assert_eq(
+        testing::expect_ok(
+            markdown::render(document, markdown::RenderOptions::commonmark()),
+            "render",
+        ),
+        "<blockquote>\n<ul>\n<li>foo\n<span>\noutside</li>\n</ul>\n</blockquote>\n",
+    );
+    testing::assert_eq(
+        testing::expect_ok(markdown::to_html("> foo\n<span>\n"), "safe render"),
+        "<blockquote>\n<p>foo\n&lt;span&gt;</p>\n</blockquote>\n",
+    );
+}

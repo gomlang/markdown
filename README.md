@@ -47,6 +47,8 @@ Nested code fences and HTML blocks retain the required quote and list prefixes
 at each level; their literal content cannot begin a lazy outer paragraph.
 Paragraph continuation tracks its quote/list prefix path, so a sibling ordered
 list can start with `2.` while the same marker inside a paragraph remains text.
+Complete tag lines such as `<span>` (CommonMark HTML block type 7) cannot
+interrupt an existing paragraph, including lazy quote/list continuation lines.
 Link/image destinations are percent-encoded during rendering, while existing
 percent escapes are preserved.
 

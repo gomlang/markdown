@@ -55,3 +55,34 @@ fn html_container_bodies_preserve_tabs_and_ignore_fence_markers() -> () {
         "<blockquote>\n<script>\n```\n</script>\n<p>after\noutside</p>\n</blockquote>\n",
     );
 }
+
+#[test]
+fn html_tag_lines_preserve_nested_lazy_paragraphs() -> () {
+    for tag in[
+        "<span>",
+        "</span>",
+        "<custom-tag data-x='甲'>",
+        "<SPAN>",
+        "<input disabled>",
+        "<img src='x' />",
+    ] {
+        testing::assert_eq(
+            commonmark("> - foo\n> " + tag + "\n> bar\noutside\n"),
+            "<blockquote>\n<ul>\n<li>foo\n" + tag + "\nbar\noutside</li>\n</ul>\n</blockquote>\n",
+        );
+    }
+}
+
+#[test]
+fn interrupting_html_still_ends_lazy_paragraphs() -> () {
+    for tag in["<script>", "<!--", "<?x", "<!DOCTYPE x", "<![CDATA[", "<div>"] {
+        testing::assert_eq(
+            commonmark("> foo\n" + tag + "\n"),
+            "<blockquote>\n<p>foo</p>\n</blockquote>\n" + tag + "\n",
+        );
+        testing::assert_eq(
+            commonmark("- foo\n" + tag + "\n"),
+            "<ul>\n<li>foo</li>\n</ul>\n" + tag + "\n",
+        );
+    }
+}
