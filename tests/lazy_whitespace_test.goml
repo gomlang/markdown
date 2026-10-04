@@ -1,0 +1,35 @@
+package tests;
+
+use std::testing;
+
+#[test]
+fn lazy_continuations_preserve_code_and_title_whitespace() -> () {
+    for (source, expected) in[
+        ("> `a\n b`", "<blockquote>\n<p><code>a  b</code></p>\n</blockquote>\n"),
+        ("> `a\n\tb`", "<blockquote>\n<p><code>a \tb</code></p>\n</blockquote>\n"),
+        (
+            "> > `a\n b`",
+            "<blockquote>\n<blockquote>\n<p><code>a  b</code></p>\n</blockquote>\n</blockquote>\n",
+        ),
+        ("- `a\n b`", "<ul>\n<li><code>a  b</code></li>\n</ul>\n"),
+        ("> - `a\n b`", "<blockquote>\n<ul>\n<li><code>a  b</code></li>\n</ul>\n</blockquote>\n"),
+        ("> - `a\n  b`", "<blockquote>\n<ul>\n<li><code>a   b</code></li>\n</ul>\n</blockquote>\n"),
+        ("> - `a\n\tb`", "<blockquote>\n<ul>\n<li><code>a \tb</code></li>\n</ul>\n</blockquote>\n"),
+        (
+            "> [x](url \"a\n b\")",
+            "<blockquote>\n<p><a href=\"url\" title=\"a\n b\">x</a></p>\n</blockquote>\n",
+        ),
+    ] {
+        testing::assert_eq(commonmark(source), expected);
+    }
+}
+
+#[test]
+fn paragraph_whitespace_and_nonlazy_indentation_keep_their_meaning() -> () {
+    testing::assert_eq(commonmark("> a\n b"), "<blockquote>\n<p>a\nb</p>\n</blockquote>\n");
+    testing::assert_eq(
+        commonmark("> `a\n> b`"),
+        "<blockquote>\n<p><code>a b</code></p>\n</blockquote>\n",
+    );
+    testing::assert_eq(commonmark("- `a\n  b`"), "<ul>\n<li><code>a b</code></li>\n</ul>\n");
+}

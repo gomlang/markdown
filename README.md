@@ -35,6 +35,8 @@ fn render_page(source: string) -> Result[string, markdown::Error] {
 
 Input line endings are normalized from CRLF and lone CR to LF. Code preserves
 literal interior tabs; tabs used for container structure obey four-column stops.
+Lazy paragraph continuations retain their leading spaces and tabs inside code
+spans and link titles, including in nested block quotes and lists.
 Link/image destinations are percent-encoded during rendering, while existing
 percent escapes are preserved.
 

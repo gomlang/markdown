@@ -418,7 +418,7 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                         }
                         continue;
                     }
-                    if indent(current.text).0 >= marker.padding {
+                    if !current.lazy && indent(current.text).0 >= marker.padding {
                         let content = if active_fence.is_some() {
                             strip_indent(current.text, marker.padding)
                         } else {
@@ -574,7 +574,13 @@ fn parse_blocks(context: Context, lines: Vec[Line], depth: isize) -> Result[Vec[
                 break;
             }
             content.write_char('\n');
-            content.write_string(strip_indent(lines[index].text, indent(lines[index].text).0));
+            content.write_string(
+                if lines[index].lazy {
+                    lines[index].text
+                } else {
+                    strip_indent(lines[index].text, indent(lines[index].text).0)
+                },
+            );
             index += 1;
         }
         let original = content.finish();

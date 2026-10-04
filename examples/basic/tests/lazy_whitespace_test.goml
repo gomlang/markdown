@@ -1,0 +1,12 @@
+package tests;
+
+use ecosystem::markdown;
+use std::testing;
+
+#[test]
+fn downstream_lazy_code_spans_keep_spaces_and_tabs() -> () {
+    let source = "> `a\n b`\n\n> `a\n\tb`";
+    let expected = "<blockquote>\n<p><code>a  b</code></p>\n</blockquote>\n<blockquote>\n<p><code>a \tb</code></p>\n</blockquote>\n";
+    testing::assert_eq(testing::expect_ok(markdown::to_html(source), "CommonMark"), expected);
+    testing::assert_eq(testing::expect_ok(markdown::to_html_gfm(source), "GFM"), expected);
+}
