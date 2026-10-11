@@ -5,4 +5,4 @@ path = "ecosystem::markdown"
 "ecosystem::html" = true
 
 [dev-dependencies]
-"ecosystem::verification" = true
+"ecosystem::testkit" = true

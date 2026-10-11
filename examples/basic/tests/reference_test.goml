@@ -1,13 +1,15 @@
 package tests;
 
-use ecosystem::verification::reference;
+use ecosystem::testkit::reference;
+use std::fs;
+use std::env;
 use std::testing;
 
 #[test]
 fn independent_reference_corpus() -> () {
-    let fixture = reference::load();
+    let fixture = reference::load(fixture_path("tests/data/reference.json"));
     let actual = testing::expect_ok(
-        reference::run_json("markdown", reference::field(fixture, "input")),
+        reference::run_json(example_binary(), reference::field(fixture, "input")),
         "reference protocol",
     );
     reference::assert_equal(
@@ -15,4 +17,24 @@ fn independent_reference_corpus() -> () {
         reference::field(fixture, "expected"),
         "markdown independent reference",
     );
+}
+
+fn fixture_path(path: string) -> string {
+    if fs::is_dir("examples/basic") {
+        "examples/basic/" + path
+    } else {
+        path
+    }
+}
+
+fn example_binary() -> string {
+    if let Ok(binary) = env::var_structured("GOML_VERIFY_BINARY") {
+        return binary
+    }
+    let example = "_artifact/bin/examples/basic/basic";
+    if fs::is_file(example) {
+        example
+    } else {
+        "_artifact/bin/markdown"
+    }
 }

@@ -1,8 +1,9 @@
 package tests;
 
 use ecosystem::markdown as md;
-use ecosystem::verification::reference;
+use ecosystem::testkit::reference;
 use std::json;
+use std::fs;
 use std::testing;
 
 #[test]
@@ -36,7 +37,7 @@ fn gfm_consumer_reads_table_and_task_metadata() -> () {
 
 #[test]
 fn disabled_extensions_preserve_entire_commonmark_and_entity_corpus() -> () {
-    let fixture = reference::load();
+    let fixture = reference::load(fixture_path("tests/data/reference.json"));
     let inputs = testing::expect_some(
         json::as_array(reference::field(fixture, "input")),
         "input cases",

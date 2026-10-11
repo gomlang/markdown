@@ -209,7 +209,7 @@ runtime table allocation. The data license is in [LICENSE.unicode.txt](LICENSE.u
 Run from this library repository:
 
 ```sh
-(cd ../verification && just ecosystem-test markdown)
+(cd ../workflows && just ecosystem-test markdown)
 ```
 
 The command checks formatting, library tests, the example,
@@ -230,17 +230,17 @@ comes from CPython 3.12.3 `html.entities.html5`, restricted to semicolon-ended n
 Its license remains in [LICENSE.entities.txt](LICENSE.entities.txt) and the HTML
 module. The native GoML generator validates the checksum and 2,125-entry count,
 then generates the shared lookup and wrapper deterministically. Its ordinary
-native test verifies both files on each `(cd ../verification && just ecosystem-test markdown)` run.
+native test verifies both files on each `(cd ../workflows && just ecosystem-test markdown)` run.
 
 To regenerate, run `goml build` from `tools`, then `_artifact/bin/markdown_entities generate ..`. `check` verifies the file without writing. The data and generator need no Python installation.
 
 ## Development and examples
 
-Requires the source-built GoML toolchain with unversioned registry support pinned in [verification/ci/toolchain.json](https://github.com/gomlang/verification/blob/main/ci/toolchain.json). The `examples/basic/` example shares the root manifest; test-only helpers are declared in `[dev-dependencies]`. From the library root, run:
+Requires the source-built GoML toolchain with unversioned registry support pinned in [workflows/ci/toolchain.json](https://github.com/gomlang/workflows/blob/main/ci/toolchain.json). The `examples/basic/` example shares the root manifest; test-only helpers are declared in `[dev-dependencies]`. From the library root, run:
 
 ```sh
 goml run --example basic
 goml test
 ```
 
-`goml test` builds the example and runs its tests. `(cd ../verification && just ecosystem-test markdown)` also retains the library-specific smoke and compatibility checks.
+`goml test` builds the example and runs its tests. `(cd ../workflows && just ecosystem-test markdown)` also retains the library-specific smoke and compatibility checks.
