@@ -5,10 +5,8 @@ configurable HTML renderer implemented in GoML. The current implementation passe
 with exact HTML comparison. Parsing, rendering and Unicode punctuation/symbol
 classification are implemented in GoML, alongside `std::unicode` whitespace and
 case folding. This module has no direct Go FFI bindings. Its `ecosystem::html`
-dependency also packages a native DOM adapter, so a consuming module needs a
-`go.mod` with Go 1.26.0 even when it only imports Markdown. The root `go.mod`
-provides this for this library and its example; GoML resolves the dependency's
-pinned Go packages during builds.
+dependency is implemented in GoML and requires no native adapter setup or
+module-root `go.mod`.
 
 ```goml
 use ecosystem::markdown;
